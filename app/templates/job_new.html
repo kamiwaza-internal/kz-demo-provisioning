@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block title %}Create New Job - AWS EC2 Provisioning{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Create New Provisioning Job</h2>
+    <p>Fill in the details to provision a new EC2 instance with Docker containers.</p>
+</div>
+
+<form method="POST" action="/jobs" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <!-- Basic Info -->
+    <div class="card">
+        <h3>Basic Information</h3>
+        <div class="form-group">
+            <label for="job_name">Job Name *</label>
+            <input type="text" id="job_name" name="job_name" required>
+            <small>Descriptive name for this provisioning job</small>
+        </div>
+
+        <div class="form-group">
+            <label for="requester_email">Requester Email *</label>
+            <input type="email" id="requester_email" name="requester_email" required>
+            <small>Email to receive notifications</small>
+        </div>
+    </div>
+
+    <!-- AWS Configuration -->
+    <div class="card">
+        <h3>AWS Configuration</h3>
+
+        <div class="form-group">
+            <label for="aws_region">AWS Region *</label>
+            <select id="aws_region" name="aws_region" required>
+                {% for region in allowed_regions %}
+                <option value="{{ region }}">{{ region }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="aws_auth_method">Authentication Method *</label>
+            <select id="aws_auth_method" name="aws_auth_method" required onchange="toggleAuthFields()">
+                <option value="assume_role">AssumeRole (Recommended)</option>
+                {% if allow_access_key_auth %}
+                <option value="access_key">Access Key</option>
+                {% endif %}
+            </select>
+        </div>
+
+        <div id="assume_role_fields">
+            <div class="form-group">
+                <label for="assume_role_arn">Role ARN *</label>
+                <input type="text" id="assume_role_arn" name="assume_role_arn" placeholder="arn:aws:iam::123456789012:role/MyRole">
+                <small>IAM Role ARN to assume</small>
+            </div>
+
+            <div class="form-group">
+                <label for="external_id">External ID</label>
+                <input type="text" id="external_id" name="external_id">
+                <small>Optional External ID for role assumption</small>
+            </div>
+
+            <div class="form-group">
+                <label for="session_name">Session Name</label>
+                <input type="text" id="session_name" name="session_name" value="terraform-provisioning">
+                <small>Session name for the assumed role</small>
+            </div>
+        </div>
+
+        <div id="access_key_fields" style="display: none;">
+            <div class="alert alert-warning">
+                Warning: Access key authentication is less secure. Use AssumeRole when possible.
+            </div>
+            <div class="form-group">
+                <label for="access_key">Access Key *</label>
+                <input type="text" id="access_key" name="access_key">
+            </div>
+
+            <div class="form-group">
+                <label for="secret_key">Secret Key *</label>
+                <input type="password" id="secret_key" name="secret_key">
+            </div>
+        </div>
+    </div>
+
+    <!-- Network Configuration -->
+    <div class="card">
+        <h3>Network Configuration</h3>
+
+        <div class="grid grid-2">
+            <div class="form-group">
+                <label for="vpc_id">VPC ID</label>
+                <input type="text" id="vpc_id" name="vpc_id" placeholder="vpc-xxxxx">
+                <small>Leave empty for default VPC</small>
+            </div>
+
+            <div class="form-group">
+                <label for="subnet_id">Subnet ID</label>
+                <input type="text" id="subnet_id" name="subnet_id" placeholder="subnet-xxxxx">
+                <small>Leave empty for default subnet</small>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="security_group_ids">Security Group IDs</label>
+            <input type="text" id="security_group_ids" name="security_group_ids" placeholder="sg-xxxxx, sg-yyyyy">
+            <small>Comma-separated list. Leave empty to create a default SG</small>
+        </div>
+
+        <div class="form-group">
+            <label for="key_pair_name">EC2 Key Pair Name</label>
+            <input type="text" id="key_pair_name" name="key_pair_name">
+            <small>Optional. Leave empty for SSM-only access</small>
+        </div>
+    </div>
+
+    <!-- EC2 Configuration -->
+    <div class="card">
+        <h3>EC2 Configuration</h3>
+
+        <div class="grid grid-2">
+            <div class="form-group">
+                <label for="instance_type">Instance Type *</label>
+                <select id="instance_type" name="instance_type" required>
+                    {% for instance_type in allowed_instance_types %}
+                    <option value="{{ instance_type }}" {% if instance_type == 't3.micro' %}selected{% endif %}>
+                        {{ instance_type }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="volume_size_gb">Volume Size (GB) *</label>
+                <input type="number" id="volume_size_gb" name="volume_size_gb" value="30" min="8" max="1000" required>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="ami_id">AMI ID</label>
+            <input type="text" id="ami_id" name="ami_id" placeholder="ami-xxxxx">
+            <small>Leave empty for latest Amazon Linux 2023</small>
+        </div>
+
+        <div class="form-group">
+            <label for="tags">Tags (JSON)</label>
+            <textarea id="tags" name="tags" rows="3" placeholder='{"Environment": "dev", "Project": "demo"}'></textarea>
+            <small>Optional resource tags as JSON</small>
+        </div>
+    </div>
+
+    <!-- Docker Configuration -->
+    <div class="card">
+        <h3>Docker Configuration</h3>
+
+        <div class="form-group">
+            <label for="dockerhub_images">Docker Containers (JSON) *</label>
+            <textarea id="dockerhub_images" name="dockerhub_images" rows="10" required>[
+  {
+    "name": "webapp",
+    "image": "nginx:latest",
+    "ports": ["80:80"],
+    "environment": {},
+    "volumes": [],
+    "restart": "unless-stopped"
+  }
+]</textarea>
+            <small>Array of container configurations. See documentation for full schema.</small>
+        </div>
+    </div>
+
+    <!-- User Configuration -->
+    <div class="card">
+        <h3>User Configuration</h3>
+
+        <div class="form-group">
+            <label for="csv_file">Users CSV File</label>
+            <input type="file" id="csv_file" name="csv_file" accept=".csv">
+            <small>Optional CSV file with columns: username, email, role (optional), display_name (optional)</small>
+        </div>
+
+        <div class="alert alert-warning">
+            CSV Example:<br>
+            <pre>username,email,role,display_name
+admin,admin@example.com,admin,Admin User
+user1,user1@example.com,user,User One</pre>
+        </div>
+    </div>
+
+    <div class="card">
+        <button type="submit" class="btn btn-primary">Create Job</button>
+        <a href="/" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+
+<script>
+function toggleAuthFields() {
+    const authMethod = document.getElementById('aws_auth_method').value;
+    const assumeRoleFields = document.getElementById('assume_role_fields');
+    const accessKeyFields = document.getElementById('access_key_fields');
+
+    if (authMethod === 'assume_role') {
+        assumeRoleFields.style.display = 'block';
+        accessKeyFields.style.display = 'none';
+        document.getElementById('assume_role_arn').required = true;
+        document.getElementById('access_key').required = false;
+        document.getElementById('secret_key').required = false;
+    } else {
+        assumeRoleFields.style.display = 'none';
+        accessKeyFields.style.display = 'block';
+        document.getElementById('assume_role_arn').required = false;
+        document.getElementById('access_key').required = true;
+        document.getElementById('secret_key').required = true;
+    }
+}
+
+// Initialize on page load
+toggleAuthFields();
+</script>
+{% endblock %}

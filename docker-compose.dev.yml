@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: kz-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Optional: PostgreSQL for production-like setup
+  # Uncomment if you want to test with PostgreSQL instead of SQLite
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: kz-postgres
+  #   environment:
+  #     POSTGRES_DB: provisioning
+  #     POSTGRES_USER: provisioning
+  #     POSTGRES_PASSWORD: provisioning
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U provisioning"]
+  #     interval: 10s
+  #     timeout: 3s
+  #     retries: 3
+
+volumes:
+  redis_data:
+  # postgres_data:
+
+# To use this docker-compose for development:
+# 1. Start services: docker-compose -f docker-compose.dev.yml up -d
+# 2. Run FastAPI: make run (in terminal 1)
+# 3. Run Celery worker: make worker (in terminal 2)
+# 4. Access UI: http://localhost:8000

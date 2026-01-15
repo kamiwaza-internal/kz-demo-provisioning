@@ -1,0 +1,6 @@
+username,email,role,display_name
+admin,admin@example.com,admin,Administrator
+john.doe,john.doe@example.com,user,John Doe
+jane.smith,jane.smith@example.com,user,Jane Smith
+developer,dev@example.com,developer,Dev User
+viewer,viewer@example.com,viewer,View Only User

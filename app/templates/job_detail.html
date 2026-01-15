@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block title %}Job #{{ job.id }} - {{ job.job_name }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Job #{{ job.id }}: {{ job.job_name }}</h2>
+    <p>
+        <span class="status status-{{ job.status }}">{{ job.status }}</span>
+        {% if job.status in ['pending', 'failed'] %}
+        <form method="POST" action="/jobs/{{ job.id }}/run" style="display: inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-primary" style="margin-left: 1rem;">
+                {% if job.status == 'pending' %}Start Job{% else %}Retry Job{% endif %}
+            </button>
+        </form>
+        {% endif %}
+    </p>
+</div>
+
+<!-- Job Details -->
+<div class="card">
+    <h3>Job Details</h3>
+    <div class="grid grid-2">
+        <div>
+            <p><strong>Created:</strong> {{ job.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</p>
+            {% if job.started_at %}
+            <p><strong>Started:</strong> {{ job.started_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</p>
+            {% endif %}
+            {% if job.completed_at %}
+            <p><strong>Completed:</strong> {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</p>
+            {% endif %}
+            <p><strong>Requester:</strong> {{ job.requester_email }}</p>
+            <p><strong>Email Sent:</strong> {{ 'Yes' if job.email_sent else 'No' }}</p>
+        </div>
+        <div>
+            <p><strong>Region:</strong> {{ job.aws_region }}</p>
+            <p><strong>Instance Type:</strong> {{ job.instance_type }}</p>
+            <p><strong>Auth Method:</strong> {{ job.aws_auth_method }}</p>
+            {% if job.aws_account_id %}
+            <p><strong>Account ID:</strong> {{ job.aws_account_id }}</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- EC2 Instance Info (if available) -->
+{% if job.instance_id %}
+<div class="card">
+    <h3>EC2 Instance</h3>
+    <p><strong>Instance ID:</strong> {{ job.instance_id }}</p>
+    {% if job.public_ip %}
+    <p><strong>Public IP:</strong> {{ job.public_ip }}</p>
+    {% endif %}
+    {% if job.private_ip %}
+    <p><strong>Private IP:</strong> {{ job.private_ip }}</p>
+    {% endif %}
+
+    {% if job.dockerhub_images %}
+    <h4 style="margin-top: 1rem;">Running Containers:</h4>
+    <ul>
+        {% for container in job.dockerhub_images %}
+        <li>
+            <strong>{{ container.name }}:</strong> {{ container.image }}
+            {% if container.ports %}
+            - Ports: {{ container.ports | join(', ') }}
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Error Message -->
+{% if job.error_message %}
+<div class="card">
+    <div class="alert alert-error">
+        <h4>Error</h4>
+        <pre>{{ job.error_message }}</pre>
+    </div>
+</div>
+{% endif %}
+
+<!-- Configuration Details -->
+<div class="card">
+    <h3>Configuration</h3>
+
+    <details>
+        <summary style="cursor: pointer; font-weight: 600; margin-bottom: 0.5rem;">AWS Configuration</summary>
+        <div style="margin-left: 1rem;">
+            {% if job.assume_role_arn %}
+            <p><strong>Role ARN:</strong> {{ job.assume_role_arn }}</p>
+            {% endif %}
+            {% if job.external_id %}
+            <p><strong>External ID:</strong> {{ job.external_id }}</p>
+            {% endif %}
+            {% if job.vpc_id %}
+            <p><strong>VPC ID:</strong> {{ job.vpc_id }}</p>
+            {% endif %}
+            {% if job.subnet_id %}
+            <p><strong>Subnet ID:</strong> {{ job.subnet_id }}</p>
+            {% endif %}
+            {% if job.security_group_ids %}
+            <p><strong>Security Groups:</strong> {{ job.security_group_ids | join(', ') }}</p>
+            {% endif %}
+            {% if job.key_pair_name %}
+            <p><strong>Key Pair:</strong> {{ job.key_pair_name }}</p>
+            {% endif %}
+        </div>
+    </details>
+
+    <details style="margin-top: 1rem;">
+        <summary style="cursor: pointer; font-weight: 600; margin-bottom: 0.5rem;">EC2 Configuration</summary>
+        <div style="margin-left: 1rem;">
+            <p><strong>Volume Size:</strong> {{ job.volume_size_gb }} GB</p>
+            {% if job.ami_id %}
+            <p><strong>AMI ID:</strong> {{ job.ami_id }}</p>
+            {% endif %}
+            {% if job.tags %}
+            <p><strong>Tags:</strong></p>
+            <pre>{{ job.tags | tojson(indent=2) }}</pre>
+            {% endif %}
+        </div>
+    </details>
+
+    <details style="margin-top: 1rem;">
+        <summary style="cursor: pointer; font-weight: 600; margin-bottom: 0.5rem;">Docker Configuration</summary>
+        <div style="margin-left: 1rem;">
+            <pre>{{ job.dockerhub_images | tojson(indent=2) }}</pre>
+        </div>
+    </details>
+
+    {% if job.users_data %}
+    <details style="margin-top: 1rem;">
+        <summary style="cursor: pointer; font-weight: 600; margin-bottom: 0.5rem;">User Data ({{ job.users_data | length }} users)</summary>
+        <div style="margin-left: 1rem;">
+            <pre>{{ job.users_data | tojson(indent=2) }}</pre>
+        </div>
+    </details>
+    {% endif %}
+</div>
+
+<!-- Logs -->
+<div class="card">
+    <h3>Logs</h3>
+    <div id="log-viewer" class="log-viewer">
+        {% for log in logs | reverse %}
+        <div class="log-line log-{{ log.level }}">
+            [{{ log.timestamp.strftime('%H:%M:%S') }}] [{{ log.level }}] {{ log.message }}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+let lastLogId = {{ logs[0].id if logs else 0 }};
+let pollInterval = null;
+
+function pollLogs() {
+    fetch(`/api/jobs/{{ job.id }}/logs?after=${lastLogId}`)
+        .then(response => response.json())
+        .then(data => {
+            const logViewer = document.getElementById('log-viewer');
+
+            // Add new logs
+            data.logs.forEach(log => {
+                const logLine = document.createElement('div');
+                logLine.className = `log-line log-${log.level}`;
+                const timestamp = new Date(log.timestamp).toLocaleTimeString();
+                logLine.textContent = `[${timestamp}] [${log.level}] ${log.message}`;
+                logViewer.appendChild(logLine);
+
+                lastLogId = Math.max(lastLogId, log.id);
+            });
+
+            // Auto-scroll to bottom
+            if (data.logs.length > 0) {
+                logViewer.scrollTop = logViewer.scrollHeight;
+            }
+
+            // Update job status and stop polling if complete
+            if (data.job_status === 'success' || data.job_status === 'failed') {
+                if (pollInterval) {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                    // Reload page to show final state
+                    setTimeout(() => location.reload(), 2000);
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error polling logs:', error);
+        });
+}
+
+// Start polling if job is running or queued
+{% if job.status in ['queued', 'running'] %}
+pollInterval = setInterval(pollLogs, 2000);
+{% endif %}
+</script>
+{% endblock %}

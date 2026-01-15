@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - AWS EC2 Provisioning{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Provisioning Jobs</h2>
+    <p>View and manage your EC2 provisioning jobs.</p>
+    <a href="/jobs/new" class="btn btn-primary">Create New Job</a>
+</div>
+
+<div class="card">
+    {% if jobs %}
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Job Name</th>
+                    <th>Status</th>
+                    <th>Region</th>
+                    <th>Instance Type</th>
+                    <th>Instance ID</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                <tr>
+                    <td>{{ job.id }}</td>
+                    <td>{{ job.job_name }}</td>
+                    <td>
+                        <span class="status status-{{ job.status }}">
+                            {{ job.status }}
+                        </span>
+                    </td>
+                    <td>{{ job.aws_region }}</td>
+                    <td>{{ job.instance_type }}</td>
+                    <td>{{ job.instance_id or '-' }}</td>
+                    <td>{{ job.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        <a href="/jobs/{{ job.id }}" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No jobs yet. <a href="/jobs/new">Create your first job</a>.</p>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,57 @@
+{
+  "job_name": "demo-webapp-provisioning",
+  "aws_region": "us-east-1",
+  "aws_auth_method": "assume_role",
+  "assume_role_arn": "arn:aws:iam::123456789012:role/TerraformProvisioningRole",
+  "external_id": "my-external-id",
+  "session_name": "terraform-demo-session",
+  "vpc_id": "vpc-0123456789abcdef0",
+  "subnet_id": "subnet-0123456789abcdef0",
+  "security_group_ids": ["sg-0123456789abcdef0"],
+  "key_pair_name": "my-keypair",
+  "instance_type": "t3.small",
+  "volume_size_gb": 30,
+  "ami_id": "",
+  "tags": {
+    "Environment": "development",
+    "Project": "KZ-Demo",
+    "CostCenter": "Engineering",
+    "Owner": "devops-team"
+  },
+  "dockerhub_images": [
+    {
+      "name": "nginx-web",
+      "image": "nginx:latest",
+      "ports": ["80:80", "443:443"],
+      "environment": {
+        "NGINX_HOST": "localhost",
+        "NGINX_PORT": "80"
+      },
+      "volumes": ["/opt/app/www:/usr/share/nginx/html:ro"],
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "redis-cache",
+      "image": "redis:7-alpine",
+      "ports": ["6379:6379"],
+      "environment": {},
+      "volumes": ["/opt/app/redis-data:/data"],
+      "restart": "unless-stopped",
+      "command": "redis-server --appendonly yes"
+    },
+    {
+      "name": "app-backend",
+      "image": "my-org/my-app:v1.2.3",
+      "ports": ["8000:8000"],
+      "environment": {
+        "DATABASE_URL": "postgresql://localhost/myapp",
+        "REDIS_URL": "redis://redis-cache:6379",
+        "LOG_LEVEL": "info"
+      },
+      "volumes": ["/opt/app/uploads:/app/uploads"],
+      "restart": "unless-stopped",
+      "user_import_endpoint": "http://localhost:8000/api/admin/import-users"
+    }
+  ],
+  "requester_email": "devops@example.com"
+}
