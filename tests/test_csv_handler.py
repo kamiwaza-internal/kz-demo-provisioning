@@ -7,38 +7,35 @@ class TestCSVHandler:
 
     def test_valid_csv(self):
         """Test parsing a valid CSV"""
-        csv_content = b"""username,email,role,display_name
-admin,admin@example.com,admin,Administrator
-user1,user1@example.com,user,User One
-user2,user2@example.com,user,User Two"""
+        csv_content = b"""email
+admin@example.com
+user1@example.com
+user2@example.com"""
 
         users, warnings = CSVHandler.parse_and_validate(csv_content)
 
         assert len(users) == 3
-        assert users[0]["username"] == "admin"
         assert users[0]["email"] == "admin@example.com"
-        assert users[0]["role"] == "admin"
-        assert users[0]["display_name"] == "Administrator"
+        assert users[1]["email"] == "user1@example.com"
+        assert users[2]["email"] == "user2@example.com"
         assert len(warnings) == 0
 
     def test_minimal_csv(self):
-        """Test CSV with only required columns"""
-        csv_content = b"""username,email
-user1,user1@example.com
-user2,user2@example.com"""
+        """Test CSV with only required column"""
+        csv_content = b"""email
+user1@example.com
+user2@example.com"""
 
         users, warnings = CSVHandler.parse_and_validate(csv_content)
 
         assert len(users) == 2
-        assert users[0]["username"] == "user1"
         assert users[0]["email"] == "user1@example.com"
-        assert users[0]["role"] == "user"  # Default role
-        assert users[0]["display_name"] is None
+        assert users[1]["email"] == "user2@example.com"
 
     def test_missing_required_column(self):
         """Test CSV missing required column"""
-        csv_content = b"""username,role
-user1,admin"""
+        csv_content = b"""username
+user1"""
 
         with pytest.raises(CSVValidationError, match="Missing required columns"):
             CSVHandler.parse_and_validate(csv_content)
@@ -50,44 +47,35 @@ user1,admin"""
         with pytest.raises(CSVValidationError, match="empty"):
             CSVHandler.parse_and_validate(csv_content)
 
-    def test_duplicate_username(self):
-        """Test CSV with duplicate username"""
-        csv_content = b"""username,email
-user1,user1@example.com
-user1,user2@example.com"""
-
-        with pytest.raises(CSVValidationError, match="Duplicate username"):
-            CSVHandler.parse_and_validate(csv_content)
-
     def test_duplicate_email(self):
         """Test CSV with duplicate email"""
-        csv_content = b"""username,email
-user1,user@example.com
-user2,user@example.com"""
+        csv_content = b"""email
+user@example.com
+user@example.com"""
 
         with pytest.raises(CSVValidationError, match="Duplicate email"):
             CSVHandler.parse_and_validate(csv_content)
 
     def test_invalid_email(self):
         """Test CSV with invalid email"""
-        csv_content = b"""username,email
-user1,not-an-email"""
+        csv_content = b"""email
+not-an-email"""
 
         with pytest.raises(CSVValidationError, match="email"):
             CSVHandler.parse_and_validate(csv_content)
 
-    def test_empty_username(self):
-        """Test CSV with empty username"""
-        csv_content = b"""username,email
-,user@example.com"""
+    def test_empty_email(self):
+        """Test CSV with empty email"""
+        csv_content = b"""email
+"""
 
-        with pytest.raises(CSVValidationError, match="username cannot be empty"):
+        with pytest.raises(CSVValidationError, match="email cannot be empty"):
             CSVHandler.parse_and_validate(csv_content)
 
     def test_email_normalization(self):
         """Test that emails are normalized to lowercase"""
-        csv_content = b"""username,email
-user1,User@Example.COM"""
+        csv_content = b"""email
+User@Example.COM"""
 
         users, warnings = CSVHandler.parse_and_validate(csv_content)
 
@@ -95,18 +83,17 @@ user1,User@Example.COM"""
 
     def test_whitespace_handling(self):
         """Test that whitespace is stripped"""
-        csv_content = b"""username,email
-  user1  ,  user@example.com  """
+        csv_content = b"""email
+  user@example.com  """
 
         users, warnings = CSVHandler.parse_and_validate(csv_content)
 
-        assert users[0]["username"] == "user1"
         assert users[0]["email"] == "user@example.com"
 
     def test_unknown_columns_warning(self):
         """Test that unknown columns generate warnings"""
-        csv_content = b"""username,email,unknown_col
-user1,user@example.com,value"""
+        csv_content = b"""email,unknown_col
+user@example.com,value"""
 
         users, warnings = CSVHandler.parse_and_validate(csv_content)
 
@@ -116,10 +103,10 @@ user1,user@example.com,value"""
 
     def test_empty_rows_skipped(self):
         """Test that empty rows are skipped with warning"""
-        csv_content = b"""username,email
-user1,user1@example.com
+        csv_content = b"""email
+user1@example.com
 
-user2,user2@example.com"""
+user2@example.com"""
 
         users, warnings = CSVHandler.parse_and_validate(csv_content)
 
@@ -129,15 +116,15 @@ user2,user2@example.com"""
     def test_to_csv_string(self):
         """Test converting users back to CSV string"""
         users = [
-            {"username": "user1", "email": "user1@example.com", "role": "admin", "display_name": "User One"},
-            {"username": "user2", "email": "user2@example.com", "role": "user", "display_name": None}
+            {"email": "user1@example.com"},
+            {"email": "user2@example.com"}
         ]
 
         csv_string = CSVHandler.to_csv_string(users)
 
-        assert "username,email,role,display_name" in csv_string
-        assert "user1,user1@example.com,admin,User One" in csv_string
-        assert "user2" in csv_string
+        assert "email" in csv_string
+        assert "user1@example.com" in csv_string
+        assert "user2@example.com" in csv_string
 
     def test_file_size_validation(self):
         """Test file size validation"""

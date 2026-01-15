@@ -188,17 +188,16 @@ The **target role** being assumed must have:
 
 ### CSV Format
 
-Upload a CSV with user data for your containerized applications:
+Upload a CSV with user email addresses for your containerized applications:
 
 ```csv
-username,email,role,display_name
-admin,admin@example.com,admin,Administrator
-user1,user1@example.com,user,User One
-user2,user2@example.com,user,User Two
+email
+admin@example.com
+user1@example.com
+user2@example.com
 ```
 
-**Required columns**: `username`, `email`
-**Optional columns**: `role`, `display_name`
+**Required column**: `email`
 
 The CSV will be:
 - Saved to `/opt/app/users.csv` on the EC2 instance

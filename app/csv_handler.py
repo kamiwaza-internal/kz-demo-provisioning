@@ -11,8 +11,8 @@ class CSVValidationError(Exception):
 
 
 class CSVHandler:
-    REQUIRED_COLUMNS = {"username", "email"}
-    OPTIONAL_COLUMNS = {"role", "display_name"}
+    REQUIRED_COLUMNS = {"email"}
+    OPTIONAL_COLUMNS = set()
     ALL_COLUMNS = REQUIRED_COLUMNS | OPTIONAL_COLUMNS
 
     @staticmethod
@@ -51,7 +51,6 @@ class CSVHandler:
 
         # Parse and validate rows
         parsed_rows = []
-        seen_usernames = set()
         seen_emails = set()
         row_num = 1
 
@@ -68,11 +67,8 @@ class CSVHandler:
                 filtered_row = {k: v for k, v in row_dict.items() if k in CSVHandler.ALL_COLUMNS}
 
                 # Normalize data
-                filtered_row["username"] = filtered_row.get("username", "").strip()
                 filtered_row["email"] = filtered_row.get("email", "").strip().lower()
 
-                if not filtered_row["username"]:
-                    raise ValueError("username cannot be empty")
                 if not filtered_row["email"]:
                     raise ValueError("email cannot be empty")
 
@@ -81,12 +77,9 @@ class CSVHandler:
                 user_dict = user.model_dump()
 
                 # Check for duplicates
-                if user_dict["username"] in seen_usernames:
-                    raise ValueError(f"Duplicate username: {user_dict['username']}")
                 if user_dict["email"] in seen_emails:
                     raise ValueError(f"Duplicate email: {user_dict['email']}")
 
-                seen_usernames.add(user_dict["username"])
                 seen_emails.add(user_dict["email"])
                 parsed_rows.append(user_dict)
 
@@ -108,7 +101,7 @@ class CSVHandler:
             return ""
 
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=["username", "email", "role", "display_name"])
+        writer = csv.DictWriter(output, fieldnames=["email"])
         writer.writeheader()
         writer.writerows(users)
         return output.getvalue()

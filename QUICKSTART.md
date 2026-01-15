@@ -147,9 +147,9 @@ Login with:
 
 3. **(Optional)** Upload a CSV file with users:
    ```csv
-   username,email
-   admin,admin@example.com
-   user1,user1@example.com
+   email
+   admin@example.com
+   user1@example.com
    ```
 
 4. Click **"Create Job"**

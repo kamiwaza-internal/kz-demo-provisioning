@@ -179,14 +179,15 @@
         <div class="form-group">
             <label for="csv_file">Users CSV File</label>
             <input type="file" id="csv_file" name="csv_file" accept=".csv">
-            <small>Optional CSV file with columns: username, email, role (optional), display_name (optional)</small>
+            <small>Optional CSV file with single column: email</small>
         </div>
 
         <div class="alert alert-warning">
             CSV Example:<br>
-            <pre>username,email,role,display_name
-admin,admin@example.com,admin,Admin User
-user1,user1@example.com,user,User One</pre>
+            <pre>email
+admin@example.com
+user1@example.com
+user2@example.com</pre>
         </div>
     </div>
 

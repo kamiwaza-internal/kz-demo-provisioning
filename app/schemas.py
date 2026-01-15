@@ -115,7 +115,4 @@ class JobLogResponse(BaseModel):
 
 
 class UserRow(BaseModel):
-    username: str
     email: EmailStr
-    role: Optional[str] = "user"
-    display_name: Optional[str] = None
