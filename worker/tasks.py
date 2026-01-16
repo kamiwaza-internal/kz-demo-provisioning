@@ -202,148 +202,133 @@ def execute_terraform_provisioning(job: Job, db, log_message):
     """Execute provisioning using Terraform (legacy)"""
     log_message("info", "Using Terraform for provisioning (legacy mode)")
 
-        # Step 1: Authenticate with AWS
-        log_message("info", "Authenticating with AWS...")
+    # Step 1: Authenticate with AWS
+    log_message("info", "Authenticating with AWS...")
 
-        try:
-            if job.aws_auth_method == "assume_role":
-                credentials = AWSHandler.assume_role(
-                    role_arn=job.assume_role_arn,
-                    session_name=job.session_name or "terraform-provisioning",
-                    external_id=job.external_id,
-                    region=job.aws_region
-                )
-                log_message("info", f"Successfully assumed role: {job.assume_role_arn}")
-            else:
-                # Note: access_key/secret_key should be passed securely and not stored in DB
-                log_message("error", "Access key authentication not fully implemented in worker")
-                raise AWSAuthError("Access key auth requires credentials to be passed securely")
+    try:
+        if job.aws_auth_method == "assume_role":
+            credentials = AWSHandler.assume_role(
+                role_arn=job.assume_role_arn,
+                session_name=job.session_name or "terraform-provisioning",
+                external_id=job.external_id,
+                region=job.aws_region
+            )
+            log_message("info", f"Successfully assumed role: {job.assume_role_arn}")
+        else:
+            # Note: access_key/secret_key should be passed securely and not stored in DB
+            log_message("error", "Access key authentication not fully implemented in worker")
+            raise AWSAuthError("Access key auth requires credentials to be passed securely")
 
-            # Get caller identity
-            account_id, arn, user_id = AWSHandler.get_caller_identity(credentials)
-            job.aws_account_id = account_id
-            db.commit()
-            log_message("info", f"Authenticated as: {arn} (Account: {account_id})")
+        # Get caller identity
+        account_id, arn, user_id = AWSHandler.get_caller_identity(credentials)
+        job.aws_account_id = account_id
+        db.commit()
+        log_message("info", f"Authenticated as: {arn} (Account: {account_id})")
 
-        except AWSAuthError as e:
-            log_message("error", f"AWS authentication failed: {str(e)}")
-            raise
+    except AWSAuthError as e:
+        log_message("error", f"AWS authentication failed: {str(e)}")
+        raise
 
-        # Step 2: Prepare Terraform workspace
-        log_message("info", "Preparing Terraform workspace...")
+    # Step 2: Prepare Terraform workspace
+    log_message("info", "Preparing Terraform workspace...")
 
-        tf_runner = TerraformRunner(
-            job_id=job.id,
-            log_callback=lambda level, msg: log_message(level, msg, source="terraform")
-        )
+    tf_runner = TerraformRunner(
+        job_id=job.id,
+        log_callback=lambda level, msg: log_message(level, msg, source="terraform")
+    )
 
-        try:
-            terraform_source = Path(__file__).parent.parent / "terraform"
-            tf_runner.prepare_workspace(str(terraform_source))
-        except TerraformError as e:
-            log_message("error", f"Failed to prepare workspace: {str(e)}")
-            raise
+    try:
+        terraform_source = Path(__file__).parent.parent / "terraform"
+        tf_runner.prepare_workspace(str(terraform_source))
+    except TerraformError as e:
+        log_message("error", f"Failed to prepare workspace: {str(e)}")
+        raise
 
-        # Step 3: Prepare Terraform variables
-        log_message("info", "Preparing Terraform variables...")
+    # Step 3: Prepare Terraform variables
+    log_message("info", "Preparing Terraform variables...")
 
-        # Generate user_data script
-        user_data_script = generate_user_data_script(job, db)
+    # Generate user_data script
+    user_data_script = generate_user_data_script(job, db)
 
-        tf_vars = {
-            "aws_region": job.aws_region,
-            "instance_type": job.instance_type,
-            "volume_size": job.volume_size_gb,
-            "job_name": job.job_name,
-            "user_data": user_data_script,
-        }
+    tf_vars = {
+        "aws_region": job.aws_region,
+        "instance_type": job.instance_type,
+        "volume_size": job.volume_size_gb,
+        "job_name": job.job_name,
+        "user_data": user_data_script,
+    }
 
-        if job.ami_id:
-            tf_vars["ami_id"] = job.ami_id
+    if job.ami_id:
+        tf_vars["ami_id"] = job.ami_id
 
-        if job.vpc_id:
-            tf_vars["vpc_id"] = job.vpc_id
+    if job.vpc_id:
+        tf_vars["vpc_id"] = job.vpc_id
 
-        if job.subnet_id:
-            tf_vars["subnet_id"] = job.subnet_id
+    if job.subnet_id:
+        tf_vars["subnet_id"] = job.subnet_id
 
-        if job.security_group_ids:
-            tf_vars["security_group_ids"] = job.security_group_ids
+    if job.security_group_ids:
+        tf_vars["security_group_ids"] = job.security_group_ids
 
-        if job.key_pair_name:
-            tf_vars["key_pair_name"] = job.key_pair_name
+    if job.key_pair_name:
+        tf_vars["key_pair_name"] = job.key_pair_name
 
-        if job.tags:
-            tf_vars["tags"] = job.tags
+    if job.tags:
+        tf_vars["tags"] = job.tags
 
-        # Write tfvars
-        tf_runner.write_tfvars(tf_vars)
+    # Write tfvars
+    tf_runner.write_tfvars(tf_vars)
 
-        # Step 4: Set up AWS environment variables for Terraform
-        tf_env = {
-            "AWS_ACCESS_KEY_ID": credentials["access_key"],
-            "AWS_SECRET_ACCESS_KEY": credentials["secret_key"],
-            "AWS_DEFAULT_REGION": credentials["region"],
-        }
+    # Step 4: Set up AWS environment variables for Terraform
+    tf_env = {
+        "AWS_ACCESS_KEY_ID": credentials["access_key"],
+        "AWS_SECRET_ACCESS_KEY": credentials["secret_key"],
+        "AWS_DEFAULT_REGION": credentials["region"],
+    }
 
-        if credentials.get("session_token"):
-            tf_env["AWS_SESSION_TOKEN"] = credentials["session_token"]
+    if credentials.get("session_token"):
+        tf_env["AWS_SESSION_TOKEN"] = credentials["session_token"]
 
-        # Step 5: Run Terraform
-        try:
-            log_message("info", "Running Terraform init...")
-            tf_runner.init(tf_env)
+    # Step 5: Run Terraform
+    try:
+        log_message("info", "Running Terraform init...")
+        tf_runner.init(tf_env)
 
-            log_message("info", "Running Terraform validate...")
-            tf_runner.validate(tf_env)
+        log_message("info", "Running Terraform validate...")
+        tf_runner.validate(tf_env)
 
-            log_message("info", "Running Terraform apply...")
-            tf_runner.apply(tf_env)
+        log_message("info", "Running Terraform apply...")
+        tf_runner.apply(tf_env)
 
-            log_message("info", "Retrieving Terraform outputs...")
-            outputs = tf_runner.get_outputs(tf_env)
+        log_message("info", "Retrieving Terraform outputs...")
+        outputs = tf_runner.get_outputs(tf_env)
 
-            # Save outputs
-            job.instance_id = outputs.get("instance_id")
-            job.public_ip = outputs.get("public_ip")
-            job.private_ip = outputs.get("private_ip")
-            job.terraform_outputs = outputs
-            db.commit()
-
-            log_message("info", f"Instance provisioned: {job.instance_id}")
-            if job.public_ip:
-                log_message("info", f"Public IP: {job.public_ip}")
-            if job.private_ip:
-                log_message("info", f"Private IP: {job.private_ip}")
-
-        except TerraformError as e:
-            log_message("error", f"Terraform execution failed: {str(e)}")
-            raise
-
-        # Step 6: Mark job as success
-        job.status = "success"
-        job.completed_at = datetime.utcnow()
+        # Save outputs
+        job.instance_id = outputs.get("instance_id")
+        job.public_ip = outputs.get("public_ip")
+        job.private_ip = outputs.get("private_ip")
+        job.terraform_outputs = outputs
         db.commit()
 
-        log_message("info", "Job completed successfully")
+        log_message("info", f"Instance provisioned: {job.instance_id}")
+        if job.public_ip:
+            log_message("info", f"Public IP: {job.public_ip}")
+        if job.private_ip:
+            log_message("info", f"Private IP: {job.private_ip}")
 
-        # Step 7: Send email notification
-        send_completion_email(job, db)
+    except TerraformError as e:
+        log_message("error", f"Terraform execution failed: {str(e)}")
+        raise
 
-    except Exception as e:
-        # Mark job as failed
-        job.status = "failed"
-        job.error_message = str(e)
-        job.completed_at = datetime.utcnow()
-        db.commit()
+    # Step 6: Mark job as success
+    job.status = "success"
+    job.completed_at = datetime.utcnow()
+    db.commit()
 
-        log_message("error", f"Job failed: {str(e)}")
+    log_message("info", "Job completed successfully")
 
-        # Send failure email
-        send_completion_email(job, db)
-
-    finally:
-        db.close()
+    # Step 7: Send email notification
+    send_completion_email(job, db)
 
 
 def generate_user_data_script(job: Job, db) -> str:

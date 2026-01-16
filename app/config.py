@@ -14,6 +14,36 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
+    # Kamiwaza Connection
+    kamiwaza_url: str = "https://localhost"
+    kamiwaza_username: str = "admin"
+    kamiwaza_password: str = "kamiwaza"
+    kamiwaza_db_path: str = "/opt/kamiwaza/db-lite/kamiwaza.db"
+
+    # Script Paths
+    kamiwaza_provision_script: str = "/Users/steffenmerten/Code/kamiwaza/scripts/provision_users.py"
+    kaizen_source: str = "/Users/steffenmerten/Code/kaizen-v3/apps/kaizenv3"
+
+    # User Credentials
+    default_user_password: str = "kamiwaza"
+
+    # AWS Authentication
+    aws_auth_method: str = "assume_role"
+    aws_assume_role_arn: str = "arn:aws:iam::916994818137:role/KamiwazaProvisionerRole"
+    aws_external_id: str = ""
+    aws_session_name: str = "kamiwaza-provisioner"
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_sso_profile: str = ""
+    aws_region: str = "us-west-2"
+    aws_provisioning_method: str = "cdk"
+
+    # API Keys
+    anthropic_api_key: str = ""
+    n2yo_api_key: str = ""
+    datalastic_api_key: str = ""
+    flightradar24_api_key: str = ""
+
     # Email
     email_provider: str = "ses"  # ses or smtp
     ses_region: str = "us-east-1"
@@ -25,7 +55,7 @@ class Settings(BaseSettings):
     smtp_pass: str = ""
     smtp_from: str = "noreply@example.com"
 
-    # AWS
+    # AWS (legacy)
     aws_default_region: str = "us-east-1"
 
     # Security & Validation

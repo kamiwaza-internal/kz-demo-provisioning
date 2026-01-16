@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM Role with AssumeRole for Kamiwaza EC2 Provisioning (reuses existing policy)'
+
+Parameters:
+  TrustedPrincipalArn:
+    Type: String
+    Description: 'ARN of the IAM user/role that can assume this role'
+    Default: 'arn:aws:iam::916994818137:user/kamiwaza-provisioner'
+
+  ExternalId:
+    Type: String
+    Description: 'Optional External ID for additional security (leave blank if not needed)'
+    Default: ''
+    NoEcho: true
+
+  ExistingPolicyArn:
+    Type: String
+    Description: 'ARN of existing KamiwazaEC2ProvisioningPolicy'
+    Default: 'arn:aws:iam::916994818137:policy/KamiwazaEC2ProvisioningPolicy'
+
+Conditions:
+  UseExternalId: !Not [!Equals [!Ref ExternalId, '']]
+
+Resources:
+  KamiwazaProvisionerRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: 'KamiwazaProvisionerRole'
+      Description: 'Role for Kamiwaza Deployment Manager to provision EC2 instances via CDK'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              AWS: !Ref TrustedPrincipalArn
+            Action: 'sts:AssumeRole'
+            Condition: !If
+              - UseExternalId
+              - StringEquals:
+                  'sts:ExternalId': !Ref ExternalId
+              - !Ref 'AWS::NoValue'
+      MaxSessionDuration: 3600  # 1 hour
+      ManagedPolicyArns:
+        - !Ref ExistingPolicyArn
+
+Outputs:
+  RoleArn:
+    Description: 'ARN of the IAM Role to assume'
+    Value: !GetAtt KamiwazaProvisionerRole.Arn
+    Export:
+      Name: 'KamiwazaProvisionerRoleArn'
+
+  RoleName:
+    Description: 'Name of the IAM Role'
+    Value: !Ref KamiwazaProvisionerRole
+
+  TrustedPrincipal:
+    Description: 'Principal that can assume this role'
+    Value: !Ref TrustedPrincipalArn
+
+  ExternalIdUsed:
+    Description: 'Whether External ID is configured'
+    Value: !If [UseExternalId, 'Yes', 'No']

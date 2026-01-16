@@ -40,6 +40,32 @@ class AWSCDKProvisioner:
         else:
             return "none"
 
+    def check_base_credentials(self) -> Tuple[bool, Optional[str]]:
+        """
+        Check if base AWS credentials are available for AssumeRole operations.
+
+        Returns:
+            Tuple of (credentials_available, message)
+        """
+        import boto3
+        from botocore.exceptions import NoCredentialsError, ClientError
+
+        try:
+            # Try to create STS client - this will check for credentials
+            sts_client = boto3.client('sts')
+
+            # Try to get caller identity to verify credentials work
+            response = sts_client.get_caller_identity()
+
+            return (True, f"✓ Authenticated as: {response.get('Arn', 'Unknown')}")
+
+        except NoCredentialsError:
+            return (False, "No AWS credentials found. Please configure base credentials.")
+        except ClientError as e:
+            return (False, f"AWS credentials invalid: {str(e)}")
+        except Exception as e:
+            return (False, f"Error checking credentials: {str(e)}")
+
     def validate_cdk_installed(self) -> Tuple[bool, Optional[str]]:
         """Check if AWS CDK is installed"""
         try:
@@ -247,7 +273,12 @@ class AWSCDKProvisioner:
         try:
             # CDK synth
             log("Running CDK synth...")
-            synth_cmd = ["npx", "cdk", "synth", "--context", f"@{context_file}"]
+            # Pass context as individual key=value pairs
+            context_args = []
+            for key, value in context.items():
+                context_args.extend(["--context", f"{key}={json.dumps(value)}"])
+
+            synth_cmd = ["npx", "cdk", "synth"] + context_args
             synth_result = subprocess.run(
                 synth_cmd,
                 capture_output=True,
@@ -267,10 +298,9 @@ class AWSCDKProvisioner:
             log("Running CDK deploy...")
             deploy_cmd = [
                 "npx", "cdk", "deploy",
-                "--context", f"@{context_file}",
                 "--require-approval", "never",
                 "--outputs-file", f"outputs-{job_id}.json"
-            ]
+            ] + context_args  # Reuse same context args from synth
 
             deploy_result = subprocess.run(
                 deploy_cmd,

@@ -101,6 +101,23 @@
     <div class="card">
         <h3>AWS Authentication</h3>
 
+        <!-- Base Credentials Status -->
+        {% if aws_credentials_available %}
+        <div class="alert alert-success" style="margin-bottom: 1rem;">
+            <strong>✓ Base AWS Credentials Configured</strong><br>
+            <small>{{ aws_credentials_message }}</small>
+        </div>
+        {% else %}
+        <div class="alert alert-error" style="margin-bottom: 1rem;">
+            <strong>⚠️ AWS Credentials Not Found</strong><br>
+            <small>{{ aws_credentials_message }}</small>
+            <p style="margin: 0.5rem 0 0 0;">
+                You need base AWS credentials for AssumeRole to work. Please enter your AWS Access Key and Secret Key below,
+                or configure them via <code>aws configure</code> command.
+            </p>
+        </div>
+        {% endif %}
+
         <div class="form-group">
             <label for="aws_auth_method">Authentication Method</label>
             <select id="aws_auth_method" name="aws_auth_method" onchange="toggleAwsAuthFields()">
@@ -556,7 +573,7 @@ Outputs:
                 <label for="aws_assume_role_arn">IAM Role ARN *</label>
                 <input type="text" id="aws_assume_role_arn" name="aws_assume_role_arn"
                        value="{{ config.AWS_ASSUME_ROLE_ARN }}"
-                       placeholder="arn:aws:iam::123456789012:role/KamiwazaProvisionerRole">
+                       placeholder="arn:aws:iam::916994818137:role/KamiwazaProvisionerRole">
                 <small>ARN of the IAM role to assume for provisioning</small>
             </div>
 
@@ -577,25 +594,42 @@ Outputs:
                     <small>Session name for tracking (optional)</small>
                 </div>
             </div>
+
         </div>
 
-        <!-- Access Keys fields -->
+        <!-- Access Keys fields (legacy - direct use) -->
         <div id="accessKeysFields" style="display: none;">
-            <div class="grid grid-2">
+            <div style="margin-bottom: 1rem; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+                <strong>⚠️ Legacy Method:</strong> Direct access keys are less secure. Consider using IAM Role (AssumeRole) instead.
+            </div>
+            <p style="margin-bottom: 1rem; color: #666;">
+                With this method, credentials are used directly for provisioning (not via AssumeRole).
+                Enter them below in the "AWS Credentials" section.
+            </p>
+        </div>
+
+        <!-- Common AWS Credentials Section (used by all auth methods) -->
+        <div style="margin-top: 1.5rem; padding: 1rem; background: #f8f8f8; border-radius: 4px; border-left: 4px solid #2196F3;">
+            <h4 style="margin-top: 0; color: #2196F3;">AWS Credentials</h4>
+            <p style="margin: 0.5rem 0; font-size: 0.9rem;">
+                <span id="credentialsHelp"></span>
+            </p>
+
+            <div class="grid grid-2" style="margin-top: 1rem;">
                 <div class="form-group">
-                    <label for="aws_access_key_id">AWS Access Key ID *</label>
+                    <label for="aws_access_key_id">AWS Access Key ID</label>
                     <input type="password" id="aws_access_key_id" name="aws_access_key_id"
                            value="{{ config.AWS_ACCESS_KEY_ID }}"
                            placeholder="AKIA...">
-                    <small>AWS access key for EC2 provisioning</small>
+                    <small id="accessKeyHelp">AWS access key credentials</small>
                 </div>
 
                 <div class="form-group">
-                    <label for="aws_secret_access_key">AWS Secret Access Key *</label>
+                    <label for="aws_secret_access_key">AWS Secret Access Key</label>
                     <input type="password" id="aws_secret_access_key" name="aws_secret_access_key"
                            value="{{ config.AWS_SECRET_ACCESS_KEY }}"
                            placeholder="...">
-                    <small>AWS secret key for EC2 provisioning</small>
+                    <small id="secretKeyHelp">AWS secret key credentials</small>
                 </div>
             </div>
         </div>
@@ -709,10 +743,19 @@ function toggleAwsAuthFields() {
     // Show relevant fields
     if (method === 'assume_role') {
         document.getElementById('iamRoleFields').style.display = 'block';
+        document.getElementById('credentialsHelp').innerHTML = '<strong>Required for AssumeRole:</strong> These base credentials are used to authenticate with AWS STS and assume the IAM role. You can enter them here or configure via <code>aws configure</code>.';
+        document.getElementById('accessKeyHelp').textContent = 'Base credentials for AssumeRole operation';
+        document.getElementById('secretKeyHelp').textContent = 'Base credentials for AssumeRole operation';
     } else if (method === 'access_keys') {
         document.getElementById('accessKeysFields').style.display = 'block';
+        document.getElementById('credentialsHelp').innerHTML = '<strong>Direct Authentication:</strong> These credentials are used directly for all AWS operations (no AssumeRole).';
+        document.getElementById('accessKeyHelp').textContent = 'AWS access key used directly for EC2 provisioning';
+        document.getElementById('secretKeyHelp').textContent = 'AWS secret key used directly for EC2 provisioning';
     } else if (method === 'sso') {
         document.getElementById('ssoFields').style.display = 'block';
+        document.getElementById('credentialsHelp').innerHTML = '<strong>Optional:</strong> SSO uses credentials from your AWS CLI configuration. You can leave these blank if SSO is properly configured.';
+        document.getElementById('accessKeyHelp').textContent = 'Optional if SSO is configured';
+        document.getElementById('secretKeyHelp').textContent = 'Optional if SSO is configured';
     }
 
     // Update setup instructions

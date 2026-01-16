@@ -1,4 +1,12 @@
+import os
+from pathlib import Path
 from celery import Celery
+from dotenv import load_dotenv
+
+# Load .env file before importing settings
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(env_path)
+
 from app.config import settings
 
 celery_app = Celery(

@@ -6,6 +6,7 @@ This CDK app provisions EC2 instances for Kamiwaza deployments.
 """
 
 import os
+import json
 import aws_cdk as cdk
 from constructs import Construct
 from aws_cdk import (
@@ -31,7 +32,16 @@ class KamiwazaEC2Stack(Stack):
         subnet_id = self.node.try_get_context("subnetId")
         key_pair_name = self.node.try_get_context("keyPairName")
         user_data_b64 = self.node.try_get_context("userData")
-        tags_dict = self.node.try_get_context("tags") or {}
+
+        # Parse tags - handle both string (JSON) and dict
+        tags_raw = self.node.try_get_context("tags") or {}
+        if isinstance(tags_raw, str):
+            try:
+                tags_dict = json.loads(tags_raw)
+            except json.JSONDecodeError:
+                tags_dict = {}
+        else:
+            tags_dict = tags_raw
 
         # Use existing VPC or create new
         if vpc_id:
@@ -147,8 +157,10 @@ class KamiwazaEC2Stack(Stack):
         Tags.of(instance).add("ManagedBy", "KamiwazaDeploymentManager")
         Tags.of(instance).add("JobId", str(job_id))
 
-        for key, value in tags_dict.items():
-            Tags.of(instance).add(key, value)
+        # Add custom tags if provided
+        if isinstance(tags_dict, dict):
+            for key, value in tags_dict.items():
+                Tags.of(instance).add(key, str(value))
 
         # Outputs
         CfnOutput(

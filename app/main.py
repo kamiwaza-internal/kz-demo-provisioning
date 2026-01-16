@@ -84,12 +84,6 @@ async def create_job(
     csrf_token: str = Form(...),
     job_name: str = Form(...),
     aws_region: str = Form(...),
-    aws_auth_method: str = Form(...),
-    assume_role_arn: Optional[str] = Form(None),
-    external_id: Optional[str] = Form(None),
-    session_name: Optional[str] = Form("terraform-provisioning"),
-    access_key: Optional[str] = Form(None),
-    secret_key: Optional[str] = Form(None),
     vpc_id: Optional[str] = Form(None),
     subnet_id: Optional[str] = Form(None),
     security_group_ids: Optional[str] = Form(None),
@@ -134,6 +128,12 @@ async def create_job(
         if security_group_ids:
             sg_ids = [sg.strip() for sg in security_group_ids.split(",") if sg.strip()]
 
+        # AWS auth settings from environment (configured in Settings page)
+        aws_auth_method = os.environ.get("AWS_AUTH_METHOD", "assume_role")
+        assume_role_arn = os.environ.get("AWS_ASSUME_ROLE_ARN", "")
+        external_id = os.environ.get("AWS_EXTERNAL_ID", "")
+        session_name = os.environ.get("AWS_SESSION_NAME", "kamiwaza-provisioner")
+
         # Create job data
         job_data = JobCreate(
             job_name=job_name,
@@ -142,8 +142,8 @@ async def create_job(
             assume_role_arn=assume_role_arn,
             external_id=external_id,
             session_name=session_name,
-            access_key=access_key,
-            secret_key=secret_key,
+            access_key=None,
+            secret_key=None,
             vpc_id=vpc_id,
             subnet_id=subnet_id,
             security_group_ids=sg_ids,
@@ -583,19 +583,32 @@ async def settings_page(
         "KAMIWAZA_PROVISION_SCRIPT": os.environ.get("KAMIWAZA_PROVISION_SCRIPT", "/Users/steffenmerten/Code/kamiwaza/scripts/provision_users.py"),
         "KAIZEN_SOURCE": os.environ.get("KAIZEN_SOURCE", "/Users/steffenmerten/Code/kaizen-v3/apps/kaizenv3"),
         "DEFAULT_USER_PASSWORD": os.environ.get("DEFAULT_USER_PASSWORD", "kamiwaza"),
+        "AWS_AUTH_METHOD": os.environ.get("AWS_AUTH_METHOD", "assume_role"),
+        "AWS_ASSUME_ROLE_ARN": os.environ.get("AWS_ASSUME_ROLE_ARN", ""),
+        "AWS_EXTERNAL_ID": os.environ.get("AWS_EXTERNAL_ID", ""),
+        "AWS_SESSION_NAME": os.environ.get("AWS_SESSION_NAME", "kamiwaza-provisioner"),
         "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID", ""),
         "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+        "AWS_SSO_PROFILE": os.environ.get("AWS_SSO_PROFILE", ""),
         "AWS_REGION": os.environ.get("AWS_REGION", "us-west-2"),
+        "AWS_PROVISIONING_METHOD": os.environ.get("AWS_PROVISIONING_METHOD", "cdk"),
         "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY", ""),
         "N2YO_API_KEY": os.environ.get("N2YO_API_KEY", ""),
         "DATALASTIC_API_KEY": os.environ.get("DATALASTIC_API_KEY", ""),
         "FLIGHTRADAR24_API_KEY": os.environ.get("FLIGHTRADAR24_API_KEY", ""),
     }
 
+    # Check if base AWS credentials are available
+    from app.aws_cdk_provisioner import AWSCDKProvisioner
+    provisioner = AWSCDKProvisioner()
+    credentials_available, credentials_message = provisioner.check_base_credentials()
+
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "csrf_token": csrf_token,
-        "config": config
+        "config": config,
+        "aws_credentials_available": credentials_available,
+        "aws_credentials_message": credentials_message
     })
 
 
@@ -610,9 +623,15 @@ async def save_settings(
     provision_script: str = Form(...),
     kaizen_source: str = Form(...),
     default_user_password: str = Form(...),
+    aws_auth_method: str = Form("assume_role"),
+    aws_assume_role_arn: str = Form(""),
+    aws_external_id: str = Form(""),
+    aws_session_name: str = Form("kamiwaza-provisioner"),
     aws_access_key_id: str = Form(""),
     aws_secret_access_key: str = Form(""),
+    aws_sso_profile: str = Form(""),
     aws_region: str = Form("us-west-2"),
+    aws_provisioning_method: str = Form("cdk"),
     anthropic_api_key: str = Form(""),
     n2yo_api_key: str = Form(""),
     datalastic_api_key: str = Form(""),
@@ -642,10 +661,16 @@ KAIZEN_SOURCE={kaizen_source}
 # User Credentials
 DEFAULT_USER_PASSWORD={default_user_password}
 
-# AWS Credentials
+# AWS Authentication
+AWS_AUTH_METHOD={aws_auth_method}
+AWS_ASSUME_ROLE_ARN={aws_assume_role_arn}
+AWS_EXTERNAL_ID={aws_external_id}
+AWS_SESSION_NAME={aws_session_name}
 AWS_ACCESS_KEY_ID={aws_access_key_id}
 AWS_SECRET_ACCESS_KEY={aws_secret_access_key}
+AWS_SSO_PROFILE={aws_sso_profile}
 AWS_REGION={aws_region}
+AWS_PROVISIONING_METHOD={aws_provisioning_method}
 
 # API Keys
 ANTHROPIC_API_KEY={anthropic_api_key}
@@ -672,9 +697,15 @@ REDIS_URL=redis://localhost:6379/0
         os.environ["KAMIWAZA_PROVISION_SCRIPT"] = provision_script
         os.environ["KAIZEN_SOURCE"] = kaizen_source
         os.environ["DEFAULT_USER_PASSWORD"] = default_user_password
+        os.environ["AWS_AUTH_METHOD"] = aws_auth_method
+        os.environ["AWS_ASSUME_ROLE_ARN"] = aws_assume_role_arn
+        os.environ["AWS_EXTERNAL_ID"] = aws_external_id
+        os.environ["AWS_SESSION_NAME"] = aws_session_name
         os.environ["AWS_ACCESS_KEY_ID"] = aws_access_key_id
         os.environ["AWS_SECRET_ACCESS_KEY"] = aws_secret_access_key
+        os.environ["AWS_SSO_PROFILE"] = aws_sso_profile
         os.environ["AWS_REGION"] = aws_region
+        os.environ["AWS_PROVISIONING_METHOD"] = aws_provisioning_method
         os.environ["ANTHROPIC_API_KEY"] = anthropic_api_key
         os.environ["N2YO_API_KEY"] = n2yo_api_key
         os.environ["DATALASTIC_API_KEY"] = datalastic_api_key
@@ -691,9 +722,15 @@ REDIS_URL=redis://localhost:6379/0
             "KAMIWAZA_PROVISION_SCRIPT": provision_script,
             "KAIZEN_SOURCE": kaizen_source,
             "DEFAULT_USER_PASSWORD": default_user_password,
+            "AWS_AUTH_METHOD": aws_auth_method,
+            "AWS_ASSUME_ROLE_ARN": aws_assume_role_arn,
+            "AWS_EXTERNAL_ID": aws_external_id,
+            "AWS_SESSION_NAME": aws_session_name,
             "AWS_ACCESS_KEY_ID": aws_access_key_id,
             "AWS_SECRET_ACCESS_KEY": aws_secret_access_key,
+            "AWS_SSO_PROFILE": aws_sso_profile,
             "AWS_REGION": aws_region,
+            "AWS_PROVISIONING_METHOD": aws_provisioning_method,
             "ANTHROPIC_API_KEY": anthropic_api_key,
             "N2YO_API_KEY": n2yo_api_key,
             "DATALASTIC_API_KEY": datalastic_api_key,

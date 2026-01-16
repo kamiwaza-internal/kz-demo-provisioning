@@ -1,0 +1,200 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM Role with AssumeRole for Kamiwaza EC2 Provisioning - handles new or existing policy'
+
+Parameters:
+  TrustedPrincipalArn:
+    Type: String
+    Description: 'ARN of the IAM user/role that can assume this role'
+    Default: 'arn:aws:iam::916994818137:user/kamiwaza-provisioner'
+
+  ExternalId:
+    Type: String
+    Description: 'Optional External ID for additional security (leave blank if not needed)'
+    Default: ''
+    NoEcho: true
+
+  ExistingPolicyArn:
+    Type: String
+    Description: 'ARN of existing policy to use (leave blank to create new policy)'
+    Default: ''
+
+Conditions:
+  UseExternalId: !Not [!Equals [!Ref ExternalId, '']]
+  CreateNewPolicy: !Equals [!Ref ExistingPolicyArn, '']
+  UseExistingPolicy: !Not [!Equals [!Ref ExistingPolicyArn, '']]
+
+Resources:
+  # Only create policy if ExistingPolicyArn is not provided
+  KamiwazaProvisioningPolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Condition: CreateNewPolicy
+    Properties:
+      ManagedPolicyName: 'KamiwazaEC2ProvisioningPolicy-AssumeRole'
+      Description: 'Policy for Kamiwaza Deployment Manager to provision EC2 instances with CDK'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # EC2 Permissions
+          - Sid: 'EC2Provisioning'
+            Effect: 'Allow'
+            Action:
+              - 'ec2:RunInstances'
+              - 'ec2:TerminateInstances'
+              - 'ec2:DescribeInstances'
+              - 'ec2:DescribeInstanceTypes'
+              - 'ec2:DescribeImages'
+              - 'ec2:DescribeKeyPairs'
+              - 'ec2:DescribeSecurityGroups'
+              - 'ec2:DescribeSubnets'
+              - 'ec2:DescribeVpcs'
+              - 'ec2:DescribeAvailabilityZones'
+              - 'ec2:DescribeInstanceAttribute'
+              - 'ec2:DescribeVolumes'
+              - 'ec2:CreateTags'
+              - 'ec2:DeleteTags'
+              - 'ec2:ModifyInstanceAttribute'
+              - 'ec2:AssociateIamInstanceProfile'
+              - 'ec2:DisassociateIamInstanceProfile'
+              - 'ec2:DescribeNetworkInterfaces'
+            Resource: '*'
+
+          # Networking Permissions
+          - Sid: 'NetworkingRequired'
+            Effect: 'Allow'
+            Action:
+              - 'ec2:AuthorizeSecurityGroupIngress'
+              - 'ec2:AuthorizeSecurityGroupEgress'
+              - 'ec2:RevokeSecurityGroupIngress'
+              - 'ec2:RevokeSecurityGroupEgress'
+              - 'ec2:CreateSecurityGroup'
+              - 'ec2:DeleteSecurityGroup'
+              - 'ec2:DescribeSecurityGroupRules'
+            Resource: '*'
+
+          # IAM Permissions for EC2 Instance Roles
+          - Sid: 'IAMPermissions'
+            Effect: 'Allow'
+            Action:
+              - 'iam:CreateRole'
+              - 'iam:DeleteRole'
+              - 'iam:GetRole'
+              - 'iam:PassRole'
+              - 'iam:AttachRolePolicy'
+              - 'iam:DetachRolePolicy'
+              - 'iam:PutRolePolicy'
+              - 'iam:DeleteRolePolicy'
+              - 'iam:GetRolePolicy'
+              - 'iam:CreateInstanceProfile'
+              - 'iam:DeleteInstanceProfile'
+              - 'iam:GetInstanceProfile'
+              - 'iam:AddRoleToInstanceProfile'
+              - 'iam:RemoveRoleFromInstanceProfile'
+              - 'iam:TagRole'
+              - 'iam:UntagRole'
+            Resource: 'arn:aws:iam::*:role/KamiwazaEC2InstanceRole*'
+
+          # CloudFormation Permissions (for CDK)
+          - Sid: 'CloudFormationCDK'
+            Effect: 'Allow'
+            Action:
+              - 'cloudformation:CreateStack'
+              - 'cloudformation:UpdateStack'
+              - 'cloudformation:DeleteStack'
+              - 'cloudformation:DescribeStacks'
+              - 'cloudformation:DescribeStackEvents'
+              - 'cloudformation:DescribeStackResources'
+              - 'cloudformation:GetTemplate'
+              - 'cloudformation:ValidateTemplate'
+              - 'cloudformation:ListStacks'
+            Resource:
+              - 'arn:aws:cloudformation:*:*:stack/CDKToolkit/*'
+              - 'arn:aws:cloudformation:*:*:stack/kamiwaza-job-*/*'
+
+          # S3 for CDK Assets
+          - Sid: 'S3ForCDK'
+            Effect: 'Allow'
+            Action:
+              - 's3:CreateBucket'
+              - 's3:PutObject'
+              - 's3:GetObject'
+              - 's3:ListBucket'
+              - 's3:DeleteObject'
+              - 's3:PutBucketVersioning'
+              - 's3:GetBucketLocation'
+              - 's3:PutBucketPolicy'
+              - 's3:GetBucketPolicy'
+            Resource:
+              - 'arn:aws:s3:::cdktoolkit-*'
+              - 'arn:aws:s3:::cdktoolkit-*/*'
+
+          # SSM for Session Manager and CDK Bootstrap
+          - Sid: 'SSMSessionManager'
+            Effect: 'Allow'
+            Action:
+              - 'ssm:DescribeSessions'
+              - 'ssm:GetConnectionStatus'
+              - 'ssm:DescribeInstanceProperties'
+              - 'ssm:GetParameter'
+              - 'ssm:GetParameters'
+              - 'ssm:PutParameter'
+            Resource:
+              - '*'
+              - 'arn:aws:ssm:*:*:parameter/cdk-bootstrap/*'
+
+  # IAM Role - always created
+  KamiwazaProvisionerRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: 'KamiwazaProvisionerRole'
+      Description: 'Role for Kamiwaza Deployment Manager to provision EC2 instances via CDK'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              AWS: !Ref TrustedPrincipalArn
+            Action: 'sts:AssumeRole'
+            Condition: !If
+              - UseExternalId
+              - StringEquals:
+                  'sts:ExternalId': !Ref ExternalId
+              - !Ref 'AWS::NoValue'
+      MaxSessionDuration: 3600  # 1 hour
+      ManagedPolicyArns:
+        - !If
+          - CreateNewPolicy
+          - !Ref KamiwazaProvisioningPolicy
+          - !Ref ExistingPolicyArn
+
+Outputs:
+  RoleArn:
+    Description: 'ARN of the IAM Role to assume'
+    Value: !GetAtt KamiwazaProvisionerRole.Arn
+    Export:
+      Name: 'KamiwazaProvisionerRoleArn'
+
+  RoleName:
+    Description: 'Name of the IAM Role'
+    Value: !Ref KamiwazaProvisionerRole
+
+  PolicyArn:
+    Description: 'ARN of the IAM Policy used'
+    Value: !If
+      - CreateNewPolicy
+      - !Ref KamiwazaProvisioningPolicy
+      - !Ref ExistingPolicyArn
+
+  PolicySource:
+    Description: 'Whether policy was created or reused'
+    Value: !If
+      - CreateNewPolicy
+      - 'Created new policy'
+      - 'Using existing policy'
+
+  TrustedPrincipal:
+    Description: 'Principal that can assume this role'
+    Value: !Ref TrustedPrincipalArn
+
+  ExternalIdUsed:
+    Description: 'Whether External ID is configured'
+    Value: !If [UseExternalId, 'Yes', 'No']

@@ -27,9 +27,13 @@
         </div>
     </div>
 
-    <!-- AWS Configuration -->
+    <!-- AWS Region Selection -->
     <div class="card">
-        <h3>AWS Configuration</h3>
+        <h3>AWS Region</h3>
+        <div class="alert alert-info">
+            <strong>Note:</strong> AWS authentication is configured in <a href="/settings">Settings</a>.
+            Only the region needs to be specified per job.
+        </div>
 
         <div class="form-group">
             <label for="aws_region">AWS Region *</label>
@@ -38,51 +42,7 @@
                 <option value="{{ region }}">{{ region }}</option>
                 {% endfor %}
             </select>
-        </div>
-
-        <div class="form-group">
-            <label for="aws_auth_method">Authentication Method *</label>
-            <select id="aws_auth_method" name="aws_auth_method" required onchange="toggleAuthFields()">
-                <option value="assume_role">AssumeRole (Recommended)</option>
-                {% if allow_access_key_auth %}
-                <option value="access_key">Access Key</option>
-                {% endif %}
-            </select>
-        </div>
-
-        <div id="assume_role_fields">
-            <div class="form-group">
-                <label for="assume_role_arn">Role ARN *</label>
-                <input type="text" id="assume_role_arn" name="assume_role_arn" placeholder="arn:aws:iam::123456789012:role/MyRole">
-                <small>IAM Role ARN to assume</small>
-            </div>
-
-            <div class="form-group">
-                <label for="external_id">External ID</label>
-                <input type="text" id="external_id" name="external_id">
-                <small>Optional External ID for role assumption</small>
-            </div>
-
-            <div class="form-group">
-                <label for="session_name">Session Name</label>
-                <input type="text" id="session_name" name="session_name" value="terraform-provisioning">
-                <small>Session name for the assumed role</small>
-            </div>
-        </div>
-
-        <div id="access_key_fields" style="display: none;">
-            <div class="alert alert-warning">
-                Warning: Access key authentication is less secure. Use AssumeRole when possible.
-            </div>
-            <div class="form-group">
-                <label for="access_key">Access Key *</label>
-                <input type="text" id="access_key" name="access_key">
-            </div>
-
-            <div class="form-group">
-                <label for="secret_key">Secret Key *</label>
-                <input type="password" id="secret_key" name="secret_key">
-            </div>
+            <small>Select the AWS region for this EC2 instance</small>
         </div>
     </div>
 
@@ -198,27 +158,6 @@ user2@example.com</pre>
 </form>
 
 <script>
-function toggleAuthFields() {
-    const authMethod = document.getElementById('aws_auth_method').value;
-    const assumeRoleFields = document.getElementById('assume_role_fields');
-    const accessKeyFields = document.getElementById('access_key_fields');
-
-    if (authMethod === 'assume_role') {
-        assumeRoleFields.style.display = 'block';
-        accessKeyFields.style.display = 'none';
-        document.getElementById('assume_role_arn').required = true;
-        document.getElementById('access_key').required = false;
-        document.getElementById('secret_key').required = false;
-    } else {
-        assumeRoleFields.style.display = 'none';
-        accessKeyFields.style.display = 'block';
-        document.getElementById('assume_role_arn').required = false;
-        document.getElementById('access_key').required = true;
-        document.getElementById('secret_key').required = true;
-    }
-}
-
-// Initialize on page load
-toggleAuthFields();
+// AWS authentication is configured in Settings - no auth field toggling needed here
 </script>
 {% endblock %}
