@@ -331,3 +331,101 @@ def send_completion_email(job: Job, db):
         job.email_sent_at = datetime.utcnow()
 
     db.commit()
+
+
+# ============================================================================
+# KAMIWAZA PROVISIONING TASK (for Deployment Manager)
+# ============================================================================
+
+@celery_app.task(bind=True, name='worker.tasks.execute_kamiwaza_provisioning')
+def execute_kamiwaza_provisioning(self, job_id: int):
+    """
+    Execute Kamiwaza user provisioning: create users and deploy Kaizen instances.
+    """
+    db = SessionLocal()
+
+    try:
+        from app.kamiwaza_provisioner import KamiwazaProvisioner
+        from app.models import JobFile
+
+        # Get job from database
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            logger.error(f"Provisioning job {job_id} not found")
+            return
+
+        # Update job status
+        job.status = "running"
+        job.started_at = datetime.utcnow()
+        db.commit()
+
+        def log_message(level: str, message: str):
+            """Helper to log messages to database"""
+            log = JobLog(
+                job_id=job.id,
+                level=level,
+                message=message,
+                source="kamiwaza-provisioner"
+            )
+            db.add(log)
+            db.commit()
+            logger.log(getattr(logging, level.upper()), f"Provisioning job {job_id}: {message}")
+
+        log_message("info", "Kamiwaza provisioning started")
+
+        # Get CSV file
+        if not job.csv_file_id:
+            log_message("error", "No CSV file attached to job")
+            raise Exception("No CSV file attached to job")
+
+        job_file = db.query(JobFile).filter(JobFile.id == job.csv_file_id).first()
+        if not job_file:
+            log_message("error", "CSV file not found in database")
+            raise Exception("CSV file not found")
+
+        # Read CSV content
+        csv_path = Path(job_file.file_path)
+        if not csv_path.exists():
+            log_message("error", f"CSV file not found at: {csv_path}")
+            raise Exception(f"CSV file not found at: {csv_path}")
+
+        with open(csv_path, 'rb') as f:
+            csv_content = f.read()
+
+        log_message("info", f"Loaded CSV file: {job_file.filename}")
+
+        # Initialize provisioner
+        provisioner = KamiwazaProvisioner()
+
+        # Run provisioning with live callback
+        success, summary, log_lines = provisioner.run_provisioning(
+            csv_content=csv_content,
+            callback=lambda line: log_message("info", line)
+        )
+
+        # Update job status
+        if success:
+            job.status = "success"
+            job.completed_at = datetime.utcnow()
+            log_message("info", "✓ Provisioning completed successfully")
+        else:
+            job.status = "failed"
+            job.error_message = summary
+            job.completed_at = datetime.utcnow()
+            log_message("error", f"✗ Provisioning failed: {summary}")
+
+        db.commit()
+
+    except Exception as e:
+        # Mark job as failed
+        logger.error(f"Provisioning job {job_id} failed: {str(e)}", exc_info=True)
+
+        job.status = "failed"
+        job.error_message = str(e)
+        job.completed_at = datetime.utcnow()
+        db.commit()
+
+        log_message("error", f"✗ Provisioning error: {str(e)}")
+
+    finally:
+        db.close()

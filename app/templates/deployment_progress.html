@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Provisioning Progress - Deployment Manager{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Provisioning Progress</h2>
+    <p style="margin-top: 0.5rem; color: #666;">Job ID: {{ job.id }}</p>
+
+    <div style="margin-top: 1rem;">
+        <strong>Status:</strong>
+        <span class="status status-{{ job.status }}">{{ job.status.upper() }}</span>
+    </div>
+
+    {% if job.error_message %}
+    <div class="alert alert-error" style="margin-top: 1rem;">
+        <strong>Error:</strong> {{ job.error_message }}
+    </div>
+    {% endif %}
+</div>
+
+{% if job.users_data %}
+<div class="card">
+    <h3>Users to Provision ({{ job.users_data|length }})</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>Role</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in job.users_data %}
+            <tr>
+                <td>{{ user.email }}</td>
+                <td>{{ user.role }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<div class="card">
+    <h3>Provisioning Log</h3>
+    <div class="log-viewer" id="logViewer">
+        <div id="logContent">
+            {% if logs %}
+                {% for log in logs|reverse %}
+                <div class="log-line log-{{ log.level }}">
+                    [{{ log.timestamp.strftime('%H:%M:%S') }}] {{ log.message }}
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="log-line log-info">Waiting for provisioning to start...</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div style="margin-top: 1rem;">
+    {% if job.status in ['pending', 'failed'] %}
+    <form method="POST" action="/deployment-manager/{{ job.id }}/run" style="display: inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-primary">Start Provisioning</button>
+    </form>
+    {% endif %}
+    <a href="/deployment-manager" class="btn btn-secondary">New Provisioning</a>
+    <a href="/" class="btn btn-secondary">Dashboard</a>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let lastLogId = {{ logs[-1].id if logs else 0 }};
+let isRunning = {{ 'true' if job.status in ['queued', 'running'] else 'false' }};
+
+async function pollLogs() {
+    if (!isRunning) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/deployment-manager/{{ job.id }}/logs?after=${lastLogId}`);
+        const data = await response.json();
+
+        // Update logs
+        if (data.logs && data.logs.length > 0) {
+            const logContent = document.getElementById('logContent');
+            data.logs.forEach(log => {
+                const logLine = document.createElement('div');
+                logLine.className = `log-line log-${log.level}`;
+                const timestamp = new Date(log.timestamp).toLocaleTimeString();
+                logLine.textContent = `[${timestamp}] ${log.message}`;
+                logContent.appendChild(logLine);
+                lastLogId = log.id;
+            });
+
+            // Auto-scroll to bottom
+            const logViewer = document.getElementById('logViewer');
+            logViewer.scrollTop = logViewer.scrollHeight;
+        }
+
+        // Update status
+        if (data.job_status !== '{{ job.status }}') {
+            // Reload page if status changed
+            window.location.reload();
+        }
+
+    } catch (error) {
+        console.error('Error polling logs:', error);
+    }
+
+    // Continue polling if still running
+    if (isRunning) {
+        setTimeout(pollLogs, 2000);
+    }
+}
+
+// Start polling if job is running
+if (isRunning) {
+    setTimeout(pollLogs, 1000);
+}
+
+// Auto-scroll to bottom on load
+window.addEventListener('load', function() {
+    const logViewer = document.getElementById('logViewer');
+    logViewer.scrollTop = logViewer.scrollHeight;
+});
+</script>
+{% endblock %}

@@ -1,0 +1,120 @@
+version: "3.8"
+
+services:
+  deployment-manager:
+    image: kamiwazaai/deployment-manager:latest
+    container_name: deployment-manager-web
+    ports:
+      - "8000:8000"
+    environment:
+      # Database
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
+
+      # Redis
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+
+      # Kamiwaza Connection
+      KAMIWAZA_URL: ${KAMIWAZA_URL:-https://host.docker.internal}
+      KAMIWAZA_USERNAME: ${KAMIWAZA_USERNAME:-admin}
+      KAMIWAZA_PASSWORD: ${KAMIWAZA_PASSWORD:-kamiwaza}
+      KAMIWAZA_DB_PATH: ${KAMIWAZA_DB_PATH:-/opt/kamiwaza/db-lite/kamiwaza.db}
+
+      # Provisioning Paths
+      KAMIWAZA_PROVISION_SCRIPT: ${KAMIWAZA_PROVISION_SCRIPT:-/Users/steffenmerten/Code/kamiwaza/scripts/provision_users.py}
+      KAIZEN_SOURCE: ${KAIZEN_SOURCE:-/Users/steffenmerten/Code/kaizen-v3/apps/kaizenv3}
+
+      # User Credentials
+      DEFAULT_USER_PASSWORD: ${DEFAULT_USER_PASSWORD:-kamiwaza}
+
+      # API Keys
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      N2YO_API_KEY: ${N2YO_API_KEY:-}
+      DATALASTIC_API_KEY: ${DATALASTIC_API_KEY:-}
+      FLIGHTRADAR24_API_KEY: ${FLIGHTRADAR24_API_KEY:-}
+
+      # App Settings
+      APP_ADMIN_USER: ${APP_ADMIN_USER:-admin}
+      APP_ADMIN_PASS: ${APP_ADMIN_PASS:-changeme123}
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+
+      # Email Configuration
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@kamiwaza.local}
+    volumes:
+      - deployment-manager-data:/app/data
+      - deployment-manager-uploads:/app/uploads
+      - deployment-manager-jobs:/app/jobs_workdir
+      # Mount Docker socket to allow Docker operations
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount Kamiwaza scripts (if running locally)
+      - /Users/steffenmerten/Code/kamiwaza/scripts:/kamiwaza/scripts:ro
+      - /Users/steffenmerten/Code/kaizen-v3:/kaizen-v3:ro
+    networks:
+      - kamiwaza-network
+    restart: unless-stopped
+    depends_on:
+      - redis
+
+  worker:
+    image: kamiwazaai/deployment-manager:latest
+    container_name: deployment-manager-worker
+    command: celery -A worker.celery_app worker --loglevel=info
+    environment:
+      # Database
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
+
+      # Redis
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+
+      # Kamiwaza Connection
+      KAMIWAZA_URL: ${KAMIWAZA_URL:-https://host.docker.internal}
+      KAMIWAZA_USERNAME: ${KAMIWAZA_USERNAME:-admin}
+      KAMIWAZA_PASSWORD: ${KAMIWAZA_PASSWORD:-kamiwaza}
+      KAMIWAZA_DB_PATH: ${KAMIWAZA_DB_PATH:-/opt/kamiwaza/db-lite/kamiwaza.db}
+
+      # Provisioning Paths
+      KAMIWAZA_PROVISION_SCRIPT: ${KAMIWAZA_PROVISION_SCRIPT:-/Users/steffenmerten/Code/kamiwaza/scripts/provision_users.py}
+      KAIZEN_SOURCE: ${KAIZEN_SOURCE:-/Users/steffenmerten/Code/kaizen-v3/apps/kaizenv3}
+
+      # User Credentials
+      DEFAULT_USER_PASSWORD: ${DEFAULT_USER_PASSWORD:-kamiwaza}
+
+      # API Keys
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      N2YO_API_KEY: ${N2YO_API_KEY:-}
+      DATALASTIC_API_KEY: ${DATALASTIC_API_KEY:-}
+      FLIGHTRADAR24_API_KEY: ${FLIGHTRADAR24_API_KEY:-}
+    volumes:
+      - deployment-manager-data:/app/data
+      - deployment-manager-uploads:/app/uploads
+      - deployment-manager-jobs:/app/jobs_workdir
+      # Mount Docker socket
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount Kamiwaza scripts
+      - /Users/steffenmerten/Code/kamiwaza/scripts:/kamiwaza/scripts:ro
+      - /Users/steffenmerten/Code/kaizen-v3:/kaizen-v3:ro
+    networks:
+      - kamiwaza-network
+    restart: unless-stopped
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: deployment-manager-redis
+    networks:
+      - kamiwaza-network
+    restart: unless-stopped
+
+volumes:
+  deployment-manager-data:
+  deployment-manager-uploads:
+  deployment-manager-jobs:
+
+networks:
+  kamiwaza-network:
+    external: true

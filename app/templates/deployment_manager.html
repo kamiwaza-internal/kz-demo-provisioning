@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block title %}Deployment Manager - Kamiwaza User Provisioning{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Deployment Manager</h2>
+    <p style="margin-top: 0.5rem; color: #666;">Upload a CSV to provision Kamiwaza users and deploy Kaizen instances</p>
+</div>
+
+<div class="card">
+    <h3>Upload User CSV</h3>
+
+    <div class="alert alert-warning" style="margin-top: 1rem;">
+        <strong>CSV Format Requirements:</strong>
+        <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+            <li>Two columns required: <code>email</code> and <code>role</code></li>
+            <li>Valid roles: <code>operator</code> or <code>analyst</code></li>
+            <li>Operators get full Kamiwaza admin access + personal Kaizen instance</li>
+            <li>Analysts get Keycloak SSO access + personal Kaizen instance</li>
+        </ul>
+    </div>
+
+    <form method="POST" action="/deployment-manager/provision" enctype="multipart/form-data" id="provisionForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <div class="form-group">
+            <label for="csv_file">User CSV File *</label>
+            <input type="file" id="csv_file" name="csv_file" accept=".csv" required>
+            <small>Upload a CSV file with email and role columns</small>
+        </div>
+
+        <div class="form-group">
+            <label>CSV Preview</label>
+            <div id="csvPreview" style="background: #f5f5f5; padding: 1rem; border-radius: 4px; min-height: 100px; display: none;">
+                <pre id="csvPreviewContent" style="background: transparent; padding: 0; margin: 0;"></pre>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Validation Status</label>
+            <div id="validationStatus"></div>
+        </div>
+
+        <div style="margin-top: 1.5rem;">
+            <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
+                Start Provisioning
+            </button>
+            <a href="/" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h3>Example CSV Format</h3>
+    <pre>email,role
+admin@kamiwaza.ai,operator
+steffen@kamiwaza.ai,analyst
+john@kamiwaza.ai,analyst</pre>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.getElementById('csv_file').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) {
+        document.getElementById('csvPreview').style.display = 'none';
+        document.getElementById('submitBtn').disabled = true;
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        const content = event.target.result;
+
+        // Show preview
+        document.getElementById('csvPreviewContent').textContent = content.split('\n').slice(0, 10).join('\n');
+        if (content.split('\n').length > 10) {
+            document.getElementById('csvPreviewContent').textContent += '\n... (truncated)';
+        }
+        document.getElementById('csvPreview').style.display = 'block';
+
+        // Validate CSV
+        const validation = validateCSV(content);
+        displayValidation(validation);
+    };
+    reader.readAsText(file);
+});
+
+function validateCSV(content) {
+    const lines = content.trim().split('\n');
+    const errors = [];
+    const warnings = [];
+    let users = [];
+
+    if (lines.length < 2) {
+        errors.push('CSV must have at least a header row and one data row');
+        return { valid: false, errors, warnings, users };
+    }
+
+    // Check header
+    const header = lines[0].toLowerCase().split(',').map(h => h.trim());
+    if (!header.includes('email')) {
+        errors.push('CSV must have an "email" column');
+    }
+    if (!header.includes('role')) {
+        errors.push('CSV must have a "role" column');
+    }
+
+    if (errors.length > 0) {
+        return { valid: false, errors, warnings, users };
+    }
+
+    const emailIndex = header.indexOf('email');
+    const roleIndex = header.indexOf('role');
+
+    // Validate data rows
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        const cols = line.split(',').map(c => c.trim());
+        const email = cols[emailIndex] || '';
+        const role = cols[roleIndex] || '';
+
+        if (!email) {
+            errors.push(`Row ${i + 1}: Missing email`);
+            continue;
+        }
+
+        if (!email.includes('@')) {
+            errors.push(`Row ${i + 1}: Invalid email format: ${email}`);
+            continue;
+        }
+
+        if (!role) {
+            errors.push(`Row ${i + 1}: Missing role for ${email}`);
+            continue;
+        }
+
+        const normalizedRole = role.toLowerCase();
+        if (normalizedRole !== 'operator' && normalizedRole !== 'analyst') {
+            errors.push(`Row ${i + 1}: Invalid role "${role}" for ${email}. Must be "operator" or "analyst"`);
+            continue;
+        }
+
+        users.push({ email, role: normalizedRole });
+    }
+
+    if (users.length === 0) {
+        errors.push('No valid users found in CSV');
+    }
+
+    return {
+        valid: errors.length === 0,
+        errors,
+        warnings,
+        users
+    };
+}
+
+function displayValidation(validation) {
+    const statusDiv = document.getElementById('validationStatus');
+    const submitBtn = document.getElementById('submitBtn');
+
+    if (validation.valid) {
+        statusDiv.innerHTML = `
+            <div class="alert alert-success">
+                <strong>✓ CSV is valid</strong><br>
+                Found ${validation.users.length} user(s):
+                <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+                    <li>Operators: ${validation.users.filter(u => u.role === 'operator').length}</li>
+                    <li>Analysts: ${validation.users.filter(u => u.role === 'analyst').length}</li>
+                </ul>
+            </div>
+        `;
+        submitBtn.disabled = false;
+    } else {
+        let html = '<div class="alert alert-error"><strong>✗ CSV validation failed</strong><ul style="margin-left: 1.5rem; margin-top: 0.5rem;">';
+        validation.errors.forEach(err => {
+            html += `<li>${err}</li>`;
+        });
+        html += '</ul></div>';
+        statusDiv.innerHTML = html;
+        submitBtn.disabled = true;
+    }
+
+    if (validation.warnings.length > 0) {
+        let html = '<div class="alert alert-warning"><strong>⚠ Warnings</strong><ul style="margin-left: 1.5rem; margin-top: 0.5rem;">';
+        validation.warnings.forEach(warn => {
+            html += `<li>${warn}</li>`;
+        });
+        html += '</ul></div>';
+        statusDiv.innerHTML += html;
+    }
+}
+
+// Confirm before submitting
+document.getElementById('provisionForm').addEventListener('submit', function(e) {
+    const file = document.getElementById('csv_file').files[0];
+    if (file) {
+        const confirmed = confirm('Are you sure you want to start provisioning users? This will create Kamiwaza users and deploy Kaizen instances.');
+        if (!confirmed) {
+            e.preventDefault();
+        }
+    }
+});
+</script>
+{% endblock %}

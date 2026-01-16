@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Kamiwaza Deployment Manager{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Configuration Settings</h2>
+    <p style="margin-top: 0.5rem; color: #666;">Configure environment variables for provisioning and deployment</p>
+</div>
+
+{% if message %}
+<div class="alert alert-{{ message_type }}">
+    {{ message }}
+</div>
+{% endif %}
+
+<form method="POST" action="/settings" id="settingsForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <!-- Kamiwaza Connection -->
+    <div class="card">
+        <h3>Kamiwaza Connection</h3>
+
+        <div class="form-group">
+            <label for="kamiwaza_url">Kamiwaza URL *</label>
+            <input type="text" id="kamiwaza_url" name="kamiwaza_url"
+                   value="{{ config.KAMIWAZA_URL }}" required
+                   placeholder="https://localhost">
+            <small>Base URL of your Kamiwaza instance</small>
+        </div>
+
+        <div class="grid grid-2">
+            <div class="form-group">
+                <label for="kamiwaza_username">Admin Username *</label>
+                <input type="text" id="kamiwaza_username" name="kamiwaza_username"
+                       value="{{ config.KAMIWAZA_USERNAME }}" required
+                       placeholder="admin">
+                <small>Kamiwaza admin username</small>
+            </div>
+
+            <div class="form-group">
+                <label for="kamiwaza_password">Admin Password *</label>
+                <input type="password" id="kamiwaza_password" name="kamiwaza_password"
+                       value="{{ config.KAMIWAZA_PASSWORD }}" required
+                       placeholder="kamiwaza">
+                <small>Kamiwaza admin password</small>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="kamiwaza_db_path">Database Path</label>
+            <input type="text" id="kamiwaza_db_path" name="kamiwaza_db_path"
+                   value="{{ config.KAMIWAZA_DB_PATH }}"
+                   placeholder="/opt/kamiwaza/db-lite/kamiwaza.db">
+            <small>Path to Kamiwaza SQLite database (for template registration)</small>
+        </div>
+
+        <div style="margin-top: 1rem;">
+            <button type="button" class="btn btn-secondary" onclick="testConnection()">
+                Test Connection
+            </button>
+            <span id="connectionStatus" style="margin-left: 1rem;"></span>
+        </div>
+    </div>
+
+    <!-- Script Paths -->
+    <div class="card">
+        <h3>Script Paths</h3>
+
+        <div class="form-group">
+            <label for="provision_script">Provisioning Script Path *</label>
+            <input type="text" id="provision_script" name="provision_script"
+                   value="{{ config.KAMIWAZA_PROVISION_SCRIPT }}" required
+                   placeholder="/Users/steffenmerten/Code/kamiwaza/scripts/provision_users.py">
+            <small>Path to provision_users.py script in Kamiwaza repository</small>
+        </div>
+
+        <div class="form-group">
+            <label for="kaizen_source">Kaizen Source Path *</label>
+            <input type="text" id="kaizen_source" name="kaizen_source"
+                   value="{{ config.KAIZEN_SOURCE }}" required
+                   placeholder="/Users/steffenmerten/Code/kaizen-v3/apps/kaizenv3">
+            <small>Path to kaizen-v3/apps/kaizenv3 source directory</small>
+        </div>
+    </div>
+
+    <!-- User Credentials -->
+    <div class="card">
+        <h3>User Credentials</h3>
+
+        <div class="form-group">
+            <label for="default_user_password">Default User Password *</label>
+            <input type="password" id="default_user_password" name="default_user_password"
+                   value="{{ config.DEFAULT_USER_PASSWORD }}" required
+                   placeholder="kamiwaza">
+            <small>Default password for newly created users</small>
+        </div>
+    </div>
+
+    <!-- AWS Credentials -->
+    <div class="card">
+        <h3>AWS Credentials</h3>
+
+        <div class="grid grid-2">
+            <div class="form-group">
+                <label for="aws_access_key_id">AWS Access Key ID</label>
+                <input type="password" id="aws_access_key_id" name="aws_access_key_id"
+                       value="{{ config.AWS_ACCESS_KEY_ID }}"
+                       placeholder="AKIA...">
+                <small>AWS access key for EC2 provisioning</small>
+            </div>
+
+            <div class="form-group">
+                <label for="aws_secret_access_key">AWS Secret Access Key</label>
+                <input type="password" id="aws_secret_access_key" name="aws_secret_access_key"
+                       value="{{ config.AWS_SECRET_ACCESS_KEY }}"
+                       placeholder="...">
+                <small>AWS secret key for EC2 provisioning</small>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="aws_region">AWS Default Region</label>
+            <input type="text" id="aws_region" name="aws_region"
+                   value="{{ config.AWS_REGION }}"
+                   placeholder="us-west-2">
+            <small>Default AWS region for EC2 provisioning (e.g., us-west-2, us-east-1)</small>
+        </div>
+    </div>
+
+    <!-- API Keys -->
+    <div class="card">
+        <h3>API Keys</h3>
+
+        <div class="form-group">
+            <label for="anthropic_api_key">Anthropic API Key</label>
+            <input type="password" id="anthropic_api_key" name="anthropic_api_key"
+                   value="{{ config.ANTHROPIC_API_KEY }}"
+                   placeholder="sk-ant-...">
+            <small>API key for Claude models in Demo Agents (get from <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a>)</small>
+        </div>
+
+        <div class="alert alert-warning">
+            <strong>MCP Tool API Keys</strong> (optional - for Indo-Pacific tracking tools)
+        </div>
+
+        <div class="grid grid-2">
+            <div class="form-group">
+                <label for="n2yo_api_key">N2YO API Key</label>
+                <input type="password" id="n2yo_api_key" name="n2yo_api_key"
+                       value="{{ config.N2YO_API_KEY }}"
+                       placeholder="2TEN6Y-...">
+                <small>Satellite tracking (<a href="https://www.n2yo.com/api/" target="_blank">n2yo.com</a>)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="datalastic_api_key">Datalastic API Key</label>
+                <input type="password" id="datalastic_api_key" name="datalastic_api_key"
+                       value="{{ config.DATALASTIC_API_KEY }}">
+                <small>Vessel tracking (<a href="https://datalastic.com/" target="_blank">datalastic.com</a>)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="flightradar24_api_key">FlightRadar24 API Key</label>
+                <input type="password" id="flightradar24_api_key" name="flightradar24_api_key"
+                       value="{{ config.FLIGHTRADAR24_API_KEY }}">
+                <small>Aircraft tracking (<a href="https://fr24api.flightradar24.com/" target="_blank">fr24api.flightradar24.com</a>)</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="margin-top: 1.5rem;">
+        <button type="submit" class="btn btn-primary">Save Configuration</button>
+        <a href="/" class="btn btn-secondary">Cancel</a>
+        <button type="button" class="btn btn-secondary" onclick="showPasswordsToggle()" style="margin-left: 1rem;">
+            <span id="togglePasswordText">Show Passwords</span>
+        </button>
+    </div>
+</form>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let passwordsVisible = false;
+
+function showPasswordsToggle() {
+    passwordsVisible = !passwordsVisible;
+    const passwordFields = document.querySelectorAll('input[type="password"]');
+    const toggleText = document.getElementById('togglePasswordText');
+
+    passwordFields.forEach(field => {
+        field.type = passwordsVisible ? 'text' : 'password';
+    });
+
+    toggleText.textContent = passwordsVisible ? 'Hide Passwords' : 'Show Passwords';
+}
+
+async function testConnection() {
+    const statusEl = document.getElementById('connectionStatus');
+    const url = document.getElementById('kamiwaza_url').value;
+    const username = document.getElementById('kamiwaza_username').value;
+    const password = document.getElementById('kamiwaza_password').value;
+
+    if (!url || !username || !password) {
+        statusEl.innerHTML = '<span style="color: #f57c00;">⚠ Please fill in URL, username, and password</span>';
+        return;
+    }
+
+    statusEl.innerHTML = '<span style="color: #666;">⏳ Testing connection...</span>';
+
+    try {
+        const response = await fetch('/api/test-kamiwaza-connection', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                url: url,
+                username: username,
+                password: password
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            statusEl.innerHTML = `<span style="color: #388e3c;">✓ Connected! Account: ${result.account || 'N/A'}</span>`;
+        } else {
+            statusEl.innerHTML = `<span style="color: #d32f2f;">✗ Failed: ${result.error}</span>`;
+        }
+    } catch (error) {
+        statusEl.innerHTML = `<span style="color: #d32f2f;">✗ Error: ${error.message}</span>`;
+    }
+}
+
+// Confirm before leaving if form is dirty
+let formChanged = false;
+document.getElementById('settingsForm').addEventListener('input', function() {
+    formChanged = true;
+});
+
+window.addEventListener('beforeunload', function(e) {
+    if (formChanged) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
+
+document.getElementById('settingsForm').addEventListener('submit', function() {
+    formChanged = false;
+});
+</script>
+{% endblock %}

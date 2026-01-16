@@ -1,0 +1,67 @@
+{
+  "name": "Deployment Manager",
+  "version": "1.0.0",
+  "description": "Web application for provisioning Kamiwaza users and deploying Kaizen instances via CSV upload",
+  "category": "administration",
+  "tags": ["provisioning", "user-management", "kaizen", "deployment"],
+  "image": "kamiwazaai/deployment-manager:latest",
+  "risk_tier": 2,
+  "required_env_vars": [
+    "KAMIWAZA_URL",
+    "KAMIWAZA_USERNAME",
+    "KAMIWAZA_PASSWORD"
+  ],
+  "env_defaults": {
+    "DATABASE_URL": "sqlite:////app/data/app.db",
+    "REDIS_URL": "redis://redis:6379/0",
+    "KAMIWAZA_URL": "https://host.docker.internal",
+    "KAMIWAZA_USERNAME": "admin",
+    "KAMIWAZA_PASSWORD": "kamiwaza",
+    "KAMIWAZA_DB_PATH": "/opt/kamiwaza/db-lite/kamiwaza.db",
+    "KAMIWAZA_PROVISION_SCRIPT": "/Users/steffenmerten/Code/kamiwaza/scripts/provision_users.py",
+    "KAIZEN_SOURCE": "/Users/steffenmerten/Code/kaizen-v3/apps/kaizenv3",
+    "DEFAULT_USER_PASSWORD": "kamiwaza",
+    "APP_ADMIN_USER": "admin",
+    "APP_ADMIN_PASS": "changeme123",
+    "SECRET_KEY": "your-secret-key-change-in-production"
+  },
+  "ports": [
+    {
+      "container": 8000,
+      "protocol": "http",
+      "description": "Web UI"
+    }
+  ],
+  "volumes": [
+    {
+      "name": "data",
+      "path": "/app/data",
+      "description": "Database and persistent data"
+    },
+    {
+      "name": "uploads",
+      "path": "/app/uploads",
+      "description": "Uploaded CSV files"
+    },
+    {
+      "name": "jobs",
+      "path": "/app/jobs_workdir",
+      "description": "Job working directories"
+    }
+  ],
+  "health_check": {
+    "endpoint": "/health",
+    "interval": 30,
+    "timeout": 10
+  },
+  "documentation": {
+    "readme": "README.md",
+    "quick_start": "Navigate to the Deployment Manager tab, upload a CSV with 'email,role' columns (roles: operator/analyst), and click 'Start Provisioning' to create Kamiwaza users and deploy Kaizen instances."
+  },
+  "dependencies": [
+    "redis:7-alpine"
+  ],
+  "author": "Kamiwaza",
+  "license": "Proprietary",
+  "repository": "https://github.com/kamiwaza/deployment-manager"
+}

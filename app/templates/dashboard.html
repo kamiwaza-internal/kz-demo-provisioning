@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - AWS EC2 Provisioning{% endblock %}
+{% block title %}Dashboard - Kamiwaza Deployment Manager{% endblock %}
 
 {% block content %}
 <div class="card">
     <h2>Provisioning Jobs</h2>
-    <p>View and manage your EC2 provisioning jobs.</p>
+    <p>View and manage EC2 provisioning and user deployment jobs.</p>
     <a href="/jobs/new" class="btn btn-primary">Create New Job</a>
+    <a href="/deployment-manager" class="btn btn-secondary" style="margin-left: 10px;">Provision Users</a>
 </div>
 
 <div class="card">
