@@ -99,32 +99,533 @@
 
     <!-- AWS Credentials -->
     <div class="card">
-        <h3>AWS Credentials</h3>
+        <h3>AWS Authentication</h3>
 
-        <div class="grid grid-2">
+        <div class="form-group">
+            <label for="aws_auth_method">Authentication Method</label>
+            <select id="aws_auth_method" name="aws_auth_method" onchange="toggleAwsAuthFields()">
+                <option value="assume_role" {{ 'selected' if config.AWS_AUTH_METHOD == 'assume_role' else '' }}>IAM Role (AssumeRole) - Recommended</option>
+                <option value="access_keys" {{ 'selected' if config.AWS_AUTH_METHOD == 'access_keys' else '' }}>Access Keys - Legacy</option>
+                <option value="sso" {{ 'selected' if config.AWS_AUTH_METHOD == 'sso' else '' }}>AWS SSO Profile</option>
+            </select>
+            <small><strong>Recommended:</strong> Use IAM Role for better security (no long-lived credentials)</small>
+        </div>
+
+        <div class="alert alert-warning">
+            <strong>⚠️ Setup Required:</strong> Configure AWS authentication based on selected method.
+            <button type="button" class="btn btn-secondary" onclick="toggleAwsSetup()" style="margin-left: 1rem; padding: 0.25rem 0.75rem; font-size: 0.85rem;">
+                Show Setup Instructions
+            </button>
+        </div>
+
+        <div id="awsSetupInstructions" style="display: none; margin-top: 1rem;">
+            <div style="background: #f5f5f5; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+                <h4 style="margin-top: 0;">AWS IAM Setup Guide</h4>
+
+                <div id="assumeRoleInstructions" style="display: none;">
+                    <h5 style="margin-top: 1rem;">Option 1: IAM Role with AssumeRole (Recommended)</h5>
+                    <p><strong>Benefits:</strong> No long-lived credentials, automatic expiration, easier rotation, audit trail via CloudTrail</p>
+
+                    <h5 style="margin-top: 1rem;">Step 1a: Create IAM Policy</h5>
+                    <p>This policy grants minimum permissions needed for EC2 provisioning:</p>
+
+                    <div style="position: relative;">
+                        <button type="button" onclick="copyToClipboard('iamPolicyAssumeRole')" class="btn btn-secondary" style="position: absolute; top: 0.5rem; right: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.85rem;">
+                            Copy
+                        </button>
+                        <pre id="iamPolicyAssumeRole" style="background: #fff; padding: 1rem; border: 1px solid #ddd; border-radius: 4px; overflow-x: auto; max-height: 300px; font-size: 0.8rem;">{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EC2Provisioning",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:TerminateInstances",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceTypes",
+        "ec2:DescribeImages",
+        "ec2:DescribeKeyPairs",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeInstanceAttribute",
+        "ec2:DescribeVolumes",
+        "ec2:CreateTags",
+        "ec2:DeleteTags",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:CreateSecurityGroup",
+        "ec2:DeleteSecurityGroup"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "IAMPassRole",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::*:role/KamiwazaEC2InstanceRole*"
+    },
+    {
+      "Sid": "CDKDeployment",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:*",
+        "s3:*"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:*:*:stack/CDKToolkit/*",
+        "arn:aws:cloudformation:*:*:stack/kamiwaza-job-*/*",
+        "arn:aws:s3:::cdktoolkit-*",
+        "arn:aws:s3:::cdktoolkit-*/*"
+      ]
+    }
+  ]
+}</pre>
+                    </div>
+
+                    <h5 style="margin-top: 1.5rem;">Step 1b: Create IAM Role with Trust Relationship</h5>
+                    <p>Create a role that can be assumed by your current AWS account/user. CloudFormation template:</p>
+
+                    <div style="position: relative;">
+                        <button type="button" onclick="copyToClipboard('assumeRoleTemplate')" class="btn btn-secondary" style="position: absolute; top: 0.5rem; right: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.85rem;">
+                            Copy
+                        </button>
+                        <pre id="assumeRoleTemplate" style="background: #fff; padding: 1rem; border: 1px solid #ddd; border-radius: 4px; overflow-x: auto; max-height: 300px; font-size: 0.8rem;">AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM Role for Kamiwaza EC2 Provisioning with AssumeRole'
+
+Parameters:
+  TrustedPrincipalArn:
+    Type: String
+    Description: 'ARN of the IAM user/role that can assume this role'
+    Default: 'arn:aws:iam::123456789012:root'
+
+  ExternalId:
+    Type: String
+    Description: 'External ID for additional security (optional but recommended)'
+    Default: ''
+
+Conditions:
+  HasExternalId: !Not [!Equals [!Ref ExternalId, '']]
+
+Resources:
+  KamiwazaProvisionerRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: 'KamiwazaProvisionerRole'
+      Description: 'Role for Kamiwaza Deployment Manager to provision EC2 instances via AssumeRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              AWS: !Ref TrustedPrincipalArn
+            Action: 'sts:AssumeRole'
+            Condition: !If
+              - HasExternalId
+              - StringEquals:
+                  'sts:ExternalId': !Ref ExternalId
+              - !Ref AWS::NoValue
+      ManagedPolicyArns:
+        - !Ref KamiwazaProvisioningPolicy
+      MaxSessionDuration: 3600
+
+  KamiwazaProvisioningPolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: 'KamiwazaEC2ProvisioningPolicy'
+      Description: 'Policy for Kamiwaza to provision EC2 instances'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: 'EC2Provisioning'
+            Effect: 'Allow'
+            Action:
+              - 'ec2:RunInstances'
+              - 'ec2:TerminateInstances'
+              - 'ec2:DescribeInstances'
+              - 'ec2:DescribeInstanceTypes'
+              - 'ec2:DescribeImages'
+              - 'ec2:DescribeKeyPairs'
+              - 'ec2:DescribeSecurityGroups'
+              - 'ec2:DescribeSubnets'
+              - 'ec2:DescribeVpcs'
+              - 'ec2:DescribeAvailabilityZones'
+              - 'ec2:DescribeInstanceAttribute'
+              - 'ec2:DescribeVolumes'
+              - 'ec2:CreateTags'
+              - 'ec2:DeleteTags'
+              - 'ec2:ModifyInstanceAttribute'
+              - 'ec2:AuthorizeSecurityGroupIngress'
+              - 'ec2:AuthorizeSecurityGroupEgress'
+              - 'ec2:RevokeSecurityGroupIngress'
+              - 'ec2:RevokeSecurityGroupEgress'
+              - 'ec2:CreateSecurityGroup'
+              - 'ec2:DeleteSecurityGroup'
+            Resource: '*'
+          - Sid: 'IAMPassRole'
+            Effect: 'Allow'
+            Action: 'iam:PassRole'
+            Resource: 'arn:aws:iam::*:role/KamiwazaEC2InstanceRole*'
+          - Sid: 'CDKDeployment'
+            Effect: 'Allow'
+            Action:
+              - 'cloudformation:*'
+              - 's3:*'
+            Resource:
+              - 'arn:aws:cloudformation:*:*:stack/CDKToolkit/*'
+              - 'arn:aws:cloudformation:*:*:stack/kamiwaza-job-*/*'
+              - 'arn:aws:s3:::cdktoolkit-*'
+              - 'arn:aws:s3:::cdktoolkit-*/*'
+
+Outputs:
+  RoleArn:
+    Description: 'ARN of the IAM Role to use for AssumeRole'
+    Value: !GetAtt KamiwazaProvisionerRole.Arn
+  ExternalId:
+    Description: 'External ID (if configured)'
+    Value: !Ref ExternalId
+    Condition: HasExternalId</pre>
+                    </div>
+
+                    <p style="margin-top: 0.5rem;">
+                        <strong>To deploy via AWS Console:</strong>
+                        <ol style="margin-left: 1.5rem; line-height: 1.8;">
+                            <li>Go to <a href="https://console.aws.amazon.com/cloudformation/home#/stacks/create" target="_blank">CloudFormation Console → Create Stack</a></li>
+                            <li><strong>Prerequisite - Prepare template:</strong>
+                                <ul style="margin-left: 1rem; margin-top: 0.25rem;">
+                                    <li>Select <strong>"Choose an existing template"</strong> (default)</li>
+                                </ul>
+                            </li>
+                            <li><strong>Specify template:</strong>
+                                <ul style="margin-left: 1rem; margin-top: 0.25rem;">
+                                    <li>Select <strong>"Upload a template file"</strong></li>
+                                    <li>Click <strong>"Choose file"</strong></li>
+                                    <li>Option A: Upload <code>aws-iam-setup/kamiwaza-iam-cloudformation.yaml</code> from your deployment manager directory</li>
+                                    <li>Option B: Copy the YAML above, save as <code>kamiwaza-iam.yaml</code>, and upload it</li>
+                                    <li>Click <strong>"Next"</strong></li>
+                                </ul>
+                            </li>
+                            <li><strong>Specify stack details:</strong>
+                                <ul style="margin-left: 1rem; margin-top: 0.25rem;">
+                                    <li>Stack name: <code>kamiwaza-iam-role</code></li>
+                                    <li><strong>TrustedPrincipalArn</strong>: Enter your AWS account ARN
+                                        <br><small style="color: #666;">Format: <code>arn:aws:iam::123456789012:root</code> (replace with your account ID)</small>
+                                        <br><small style="color: #666;">To find your account ID: Click your username in top-right corner of AWS Console</small>
+                                    </li>
+                                    <li><strong>ExternalId</strong>: Enter a random string (recommended for security)
+                                        <br><small style="color: #666;">Example: <code>kamiwaza-external-id-{{ range(10000, 99999) | random }}</code></small>
+                                        <br><small style="color: #f57c00;">⚠️ Save this External ID - you'll need it below!</small>
+                                    </li>
+                                    <li>Click <strong>"Next"</strong></li>
+                                </ul>
+                            </li>
+                            <li><strong>Configure stack options:</strong>
+                                <ul style="margin-left: 1rem; margin-top: 0.25rem;">
+                                    <li>Leave defaults, click <strong>"Next"</strong></li>
+                                </ul>
+                            </li>
+                            <li><strong>Review:</strong>
+                                <ul style="margin-left: 1rem; margin-top: 0.25rem;">
+                                    <li>Scroll to bottom</li>
+                                    <li>Check ✓ <strong>"I acknowledge that AWS CloudFormation might create IAM resources with custom names"</strong></li>
+                                    <li>Click <strong>"Submit"</strong></li>
+                                </ul>
+                            </li>
+                            <li><strong>Wait for stack creation:</strong>
+                                <ul style="margin-left: 1rem; margin-top: 0.25rem;">
+                                    <li>Status will change from <code>CREATE_IN_PROGRESS</code> to <code>CREATE_COMPLETE</code> (1-2 minutes)</li>
+                                    <li>Refresh page if needed</li>
+                                </ul>
+                            </li>
+                            <li><strong>Get Role ARN:</strong>
+                                <ul style="margin-left: 1rem; margin-top: 0.25rem;">
+                                    <li>Click the <strong>"Outputs"</strong> tab</li>
+                                    <li>Copy the <strong>RoleArn</strong> value (starts with <code>arn:aws:iam::</code>)</li>
+                                    <li>Enter it in the "IAM Role ARN" field below</li>
+                                    <li>Also enter the <strong>ExternalId</strong> you used in step 4</li>
+                                </ul>
+                            </li>
+                            <li>Click <strong>"Save Configuration"</strong> at the bottom of this page</li>
+                        </ol>
+                    </p>
+
+                    <div style="background: #e3f2fd; padding: 0.75rem; border-radius: 4px; margin-top: 1rem;">
+                        <strong>💡 Quick Tip:</strong> Your AWS Account ID is visible in the top-right corner of the AWS Console (click your username to see it). Format your TrustedPrincipalArn as: <code>arn:aws:iam::YOUR-ACCOUNT-ID:root</code>
+                    </div>
+                </div>
+
+                <div id="accessKeysInstructions" style="display: none;">
+                    <h5 style="margin-top: 1rem;">Option 2: Access Keys (Legacy)</h5>
+                    <p><strong>Warning:</strong> Long-lived credentials pose security risks. Use IAM Role instead if possible.</p>
+
+                    <h5 style="margin-top: 1rem;">Step 1: Create IAM Policy</h5>
+                    <p>This policy grants minimum permissions needed for EC2 provisioning:</p>
+
+                <div style="position: relative;">
+                    <button type="button" onclick="copyToClipboard('iamPolicy')" class="btn btn-secondary" style="position: absolute; top: 0.5rem; right: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.85rem;">
+                        Copy
+                    </button>
+                    <pre id="iamPolicy" style="background: #fff; padding: 1rem; border: 1px solid #ddd; border-radius: 4px; overflow-x: auto; max-height: 300px; font-size: 0.8rem;">{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EC2Provisioning",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:TerminateInstances",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceTypes",
+        "ec2:DescribeImages",
+        "ec2:DescribeKeyPairs",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeInstanceAttribute",
+        "ec2:DescribeVolumes",
+        "ec2:CreateTags",
+        "ec2:DeleteTags",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:AssociateIamInstanceProfile",
+        "ec2:DisassociateIamInstanceProfile"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "NetworkingRequired",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:CreateSecurityGroup",
+        "ec2:DeleteSecurityGroup"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "TerraformStateManagement",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::terraform-state-*",
+        "arn:aws:s3:::terraform-state-*/*"
+      ]
+    }
+  ]
+}</pre>
+                </div>
+
+                <h5 style="margin-top: 1.5rem;">Step 2: Create IAM User via AWS Console</h5>
+                <ol style="margin-left: 1.5rem; line-height: 1.8;">
+                    <li>Go to <a href="https://console.aws.amazon.com/iam/" target="_blank">AWS IAM Console</a></li>
+                    <li>Click <strong>Users</strong> → <strong>Add users</strong></li>
+                    <li>Username: <code>kamiwaza-provisioner</code></li>
+                    <li>Select <strong>Programmatic access</strong></li>
+                    <li>Click <strong>Next: Permissions</strong></li>
+                    <li>Click <strong>Attach policies directly</strong></li>
+                    <li>Click <strong>Create policy</strong> (opens new tab)</li>
+                    <li>Click <strong>JSON</strong> tab</li>
+                    <li>Paste the policy JSON from Step 1 above</li>
+                    <li>Click <strong>Next: Tags</strong> → <strong>Next: Review</strong></li>
+                    <li>Policy name: <code>KamiwazaEC2ProvisioningPolicy</code></li>
+                    <li>Click <strong>Create policy</strong></li>
+                    <li>Return to user creation tab, refresh policies, and attach <code>KamiwazaEC2ProvisioningPolicy</code></li>
+                    <li>Click <strong>Next: Tags</strong> → <strong>Next: Review</strong> → <strong>Create user</strong></li>
+                    <li><strong>⚠️ IMPORTANT:</strong> Save the <strong>Access Key ID</strong> and <strong>Secret Access Key</strong> - you won't see the secret again!</li>
+                </ol>
+
+                <h5 style="margin-top: 1.5rem;">Step 3: CloudFormation Template for AssumeRole Setup</h5>
+                <p>Copy this template and deploy via AWS CloudFormation Console (instructions below):</p>
+
+                <div style="position: relative;">
+                    <button type="button" onclick="copyToClipboard('cloudformationTemplate')" class="btn btn-secondary" style="position: absolute; top: 0.5rem; right: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.85rem;">
+                        Copy
+                    </button>
+                    <pre id="cloudformationTemplate" style="background: #fff; padding: 1rem; border: 1px solid #ddd; border-radius: 4px; overflow-x: auto; max-height: 300px; font-size: 0.8rem;">AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM User and Policy for Kamiwaza EC2 Provisioning'
+
+Resources:
+  KamiwazaProvisioningPolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: 'KamiwazaEC2ProvisioningPolicy'
+      Description: 'Policy for Kamiwaza Deployment Manager to provision EC2 instances'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: 'EC2Provisioning'
+            Effect: 'Allow'
+            Action:
+              - 'ec2:RunInstances'
+              - 'ec2:TerminateInstances'
+              - 'ec2:DescribeInstances'
+              - 'ec2:DescribeInstanceTypes'
+              - 'ec2:DescribeImages'
+              - 'ec2:DescribeKeyPairs'
+              - 'ec2:DescribeSecurityGroups'
+              - 'ec2:DescribeSubnets'
+              - 'ec2:DescribeVpcs'
+              - 'ec2:DescribeAvailabilityZones'
+              - 'ec2:DescribeInstanceAttribute'
+              - 'ec2:DescribeVolumes'
+              - 'ec2:CreateTags'
+              - 'ec2:DeleteTags'
+              - 'ec2:ModifyInstanceAttribute'
+              - 'ec2:AssociateIamInstanceProfile'
+              - 'ec2:DisassociateIamInstanceProfile'
+            Resource: '*'
+          - Sid: 'NetworkingRequired'
+            Effect: 'Allow'
+            Action:
+              - 'ec2:AuthorizeSecurityGroupIngress'
+              - 'ec2:AuthorizeSecurityGroupEgress'
+              - 'ec2:RevokeSecurityGroupIngress'
+              - 'ec2:RevokeSecurityGroupEgress'
+              - 'ec2:CreateSecurityGroup'
+              - 'ec2:DeleteSecurityGroup'
+            Resource: '*'
+          - Sid: 'TerraformStateManagement'
+            Effect: 'Allow'
+            Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:DeleteObject'
+              - 's3:ListBucket'
+            Resource:
+              - 'arn:aws:s3:::terraform-state-*'
+              - 'arn:aws:s3:::terraform-state-*/*'
+
+  KamiwazaProvisioningUser:
+    Type: 'AWS::IAM::User'
+    Properties:
+      UserName: 'kamiwaza-provisioner'
+      ManagedPolicyArns:
+        - !Ref KamiwazaProvisioningPolicy
+
+  KamiwazaProvisioningAccessKey:
+    Type: 'AWS::IAM::AccessKey'
+    Properties:
+      UserName: !Ref KamiwazaProvisioningUser
+
+Outputs:
+  AccessKeyId:
+    Description: 'Access Key ID for Kamiwaza Provisioner'
+    Value: !Ref KamiwazaProvisioningAccessKey
+  SecretAccessKey:
+    Description: 'Secret Access Key for Kamiwaza Provisioner (save this securely!)'
+    Value: !GetAtt KamiwazaProvisioningAccessKey.SecretAccessKey
+  UserArn:
+    Description: 'ARN of the IAM User'
+    Value: !GetAtt KamiwazaProvisioningUser.Arn</pre>
+                </div>
+
+                <p style="margin-top: 0.5rem;">
+                    <strong>To deploy:</strong>
+                    <ol style="margin-left: 1.5rem; line-height: 1.8;">
+                        <li>Go to <a href="https://console.aws.amazon.com/cloudformation/" target="_blank">CloudFormation Console</a></li>
+                        <li>Click <strong>Create stack</strong> → <strong>With new resources</strong></li>
+                        <li>Select <strong>Upload a template file</strong></li>
+                        <li>Copy the YAML above, save as <code>kamiwaza-iam.yaml</code>, and upload</li>
+                        <li>Click <strong>Next</strong> → <strong>Next</strong> → Check <strong>I acknowledge that AWS CloudFormation might create IAM resources</strong></li>
+                        <li>Click <strong>Create stack</strong></li>
+                        <li>Once complete, go to <strong>Outputs</strong> tab to see Access Key ID and Secret</li>
+                    </ol>
+                </p>
+
+                <h5 style="margin-top: 1.5rem;">Step 4: Enter Credentials Below</h5>
+                <p>Once you have the Access Key ID and Secret Access Key, enter them in the fields below and click Save Configuration.</p>
+            </div>
+        </div>
+
+        <!-- IAM Role fields -->
+        <div id="iamRoleFields" style="display: none;">
             <div class="form-group">
-                <label for="aws_access_key_id">AWS Access Key ID</label>
-                <input type="password" id="aws_access_key_id" name="aws_access_key_id"
-                       value="{{ config.AWS_ACCESS_KEY_ID }}"
-                       placeholder="AKIA...">
-                <small>AWS access key for EC2 provisioning</small>
+                <label for="aws_assume_role_arn">IAM Role ARN *</label>
+                <input type="text" id="aws_assume_role_arn" name="aws_assume_role_arn"
+                       value="{{ config.AWS_ASSUME_ROLE_ARN }}"
+                       placeholder="arn:aws:iam::123456789012:role/KamiwazaProvisionerRole">
+                <small>ARN of the IAM role to assume for provisioning</small>
             </div>
 
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label for="aws_external_id">External ID (Optional)</label>
+                    <input type="text" id="aws_external_id" name="aws_external_id"
+                           value="{{ config.AWS_EXTERNAL_ID }}"
+                           placeholder="optional-external-id">
+                    <small>External ID for additional security (optional but recommended)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="aws_session_name">Session Name</label>
+                    <input type="text" id="aws_session_name" name="aws_session_name"
+                           value="{{ config.AWS_SESSION_NAME or 'kamiwaza-provisioner' }}"
+                           placeholder="kamiwaza-provisioner">
+                    <small>Session name for tracking (optional)</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Access Keys fields -->
+        <div id="accessKeysFields" style="display: none;">
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label for="aws_access_key_id">AWS Access Key ID *</label>
+                    <input type="password" id="aws_access_key_id" name="aws_access_key_id"
+                           value="{{ config.AWS_ACCESS_KEY_ID }}"
+                           placeholder="AKIA...">
+                    <small>AWS access key for EC2 provisioning</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="aws_secret_access_key">AWS Secret Access Key *</label>
+                    <input type="password" id="aws_secret_access_key" name="aws_secret_access_key"
+                           value="{{ config.AWS_SECRET_ACCESS_KEY }}"
+                           placeholder="...">
+                    <small>AWS secret key for EC2 provisioning</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- SSO Profile fields -->
+        <div id="ssoFields" style="display: none;">
             <div class="form-group">
-                <label for="aws_secret_access_key">AWS Secret Access Key</label>
-                <input type="password" id="aws_secret_access_key" name="aws_secret_access_key"
-                       value="{{ config.AWS_SECRET_ACCESS_KEY }}"
-                       placeholder="...">
-                <small>AWS secret key for EC2 provisioning</small>
+                <label for="aws_sso_profile">AWS SSO Profile Name *</label>
+                <input type="text" id="aws_sso_profile" name="aws_sso_profile"
+                       value="{{ config.AWS_SSO_PROFILE }}"
+                       placeholder="default">
+                <small>Name of the AWS SSO profile from ~/.aws/config</small>
             </div>
         </div>
 
         <div class="form-group">
-            <label for="aws_region">AWS Default Region</label>
+            <label for="aws_region">AWS Default Region *</label>
             <input type="text" id="aws_region" name="aws_region"
                    value="{{ config.AWS_REGION }}"
-                   placeholder="us-west-2">
+                   placeholder="us-west-2" required>
             <small>Default AWS region for EC2 provisioning (e.g., us-west-2, us-east-1)</small>
+        </div>
+
+        <div class="form-group">
+            <label for="aws_provisioning_method">Provisioning Method</label>
+            <select id="aws_provisioning_method" name="aws_provisioning_method">
+                <option value="cdk" {{ 'selected' if config.AWS_PROVISIONING_METHOD == 'cdk' else '' }}>AWS CDK (Recommended)</option>
+                <option value="terraform" {{ 'selected' if config.AWS_PROVISIONING_METHOD == 'terraform' else '' }}>Terraform</option>
+            </select>
+            <small>AWS CDK provides better infrastructure as code and integrates natively with IAM roles</small>
         </div>
     </div>
 
@@ -195,6 +696,82 @@ function showPasswordsToggle() {
     });
 
     toggleText.textContent = passwordsVisible ? 'Hide Passwords' : 'Show Passwords';
+}
+
+function toggleAwsAuthFields() {
+    const method = document.getElementById('aws_auth_method').value;
+
+    // Hide all auth field groups
+    document.getElementById('iamRoleFields').style.display = 'none';
+    document.getElementById('accessKeysFields').style.display = 'none';
+    document.getElementById('ssoFields').style.display = 'none';
+
+    // Show relevant fields
+    if (method === 'assume_role') {
+        document.getElementById('iamRoleFields').style.display = 'block';
+    } else if (method === 'access_keys') {
+        document.getElementById('accessKeysFields').style.display = 'block';
+    } else if (method === 'sso') {
+        document.getElementById('ssoFields').style.display = 'block';
+    }
+
+    // Update setup instructions
+    updateSetupInstructions(method);
+}
+
+function updateSetupInstructions(method) {
+    const assumeRoleDiv = document.getElementById('assumeRoleInstructions');
+    const accessKeysDiv = document.getElementById('accessKeysInstructions');
+
+    if (assumeRoleDiv && accessKeysDiv) {
+        if (method === 'assume_role') {
+            assumeRoleDiv.style.display = 'block';
+            accessKeysDiv.style.display = 'none';
+        } else {
+            assumeRoleDiv.style.display = 'none';
+            accessKeysDiv.style.display = 'block';
+        }
+    }
+}
+
+function toggleAwsSetup() {
+    const setupDiv = document.getElementById('awsSetupInstructions');
+    const btn = event.target;
+
+    if (setupDiv.style.display === 'none') {
+        setupDiv.style.display = 'block';
+        btn.textContent = 'Hide Setup Instructions';
+        // Update instructions based on current auth method
+        const method = document.getElementById('aws_auth_method').value;
+        updateSetupInstructions(method);
+    } else {
+        setupDiv.style.display = 'none';
+        btn.textContent = 'Show Setup Instructions';
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    toggleAwsAuthFields();
+});
+
+function copyToClipboard(elementId) {
+    const element = document.getElementById(elementId);
+    const text = element.textContent;
+
+    navigator.clipboard.writeText(text).then(function() {
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.style.background = '#388e3c';
+
+        setTimeout(function() {
+            btn.textContent = originalText;
+            btn.style.background = '';
+        }, 2000);
+    }, function(err) {
+        alert('Failed to copy: ' + err);
+    });
 }
 
 async function testConnection() {
