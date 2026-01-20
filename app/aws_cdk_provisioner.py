@@ -276,7 +276,13 @@ class AWSCDKProvisioner:
             # Pass context as individual key=value pairs
             context_args = []
             for key, value in context.items():
-                context_args.extend(["--context", f"{key}={json.dumps(value)}"])
+                # Only use json.dumps for complex types (dict, list)
+                # For simple types, convert directly to string to avoid extra quotes
+                if isinstance(value, (dict, list)):
+                    value_str = json.dumps(value)
+                else:
+                    value_str = str(value)
+                context_args.extend(["--context", f"{key}={value_str}"])
 
             synth_cmd = ["npx", "cdk", "synth"] + context_args
             synth_result = subprocess.run(
