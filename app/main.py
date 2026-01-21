@@ -484,7 +484,6 @@ async def deployment_manager_home(
 async def create_provisioning_job(
     request: Request,
     csrf_token: str = Form(...),
-    deployment_mode: str = Form(...),
     csv_file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
@@ -494,9 +493,9 @@ async def create_provisioning_job(
     if not csrf_protection.verify_token(csrf_token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
-    # Validate deployment_mode
-    if deployment_mode not in ["lite", "full"]:
-        raise HTTPException(status_code=400, detail="Invalid deployment_mode. Must be 'lite' or 'full'")
+    # User provisioning is done to an already-deployed Kamiwaza instance
+    # The deployment mode is determined by that instance (must be "full" for user provisioning to work)
+    deployment_mode = "full"
 
     try:
         # Read CSV content
@@ -512,10 +511,10 @@ async def create_provisioning_job(
 
         # Create job in database
         job = Job(
-            job_name=f"Kamiwaza User Provisioning ({deployment_mode.upper()}) - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+            job_name=f"Kamiwaza User Provisioning - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
             status="pending",
             deployment_type="docker",  # User provisioning uses docker deployment
-            kamiwaza_deployment_mode=deployment_mode,
+            kamiwaza_deployment_mode=deployment_mode,  # Always "full" for user provisioning
             aws_region="N/A",  # Not used for Kamiwaza provisioning
             aws_auth_method="N/A",
             instance_type="N/A",
@@ -917,6 +916,275 @@ async def test_kamiwaza_connection(request: Request):
             "success": False,
             "error": str(e)
         })
+
+
+@app.get("/ami-manager", response_class=HTMLResponse)
+async def ami_manager_page(
+    request: Request
+):
+    """Display AMI management page"""
+    csrf_token = csrf_protection.generate_token()
+
+    # Check if base AWS credentials are available
+    from app.aws_cdk_provisioner import AWSCDKProvisioner
+    provisioner = AWSCDKProvisioner()
+    credentials_available, credentials_message = provisioner.check_base_credentials()
+
+    return templates.TemplateResponse("ami_manager.html", {
+        "request": request,
+        "csrf_token": csrf_token,
+        "aws_credentials_available": credentials_available,
+        "aws_credentials_message": credentials_message
+    })
+
+
+@app.get("/api/amis")
+async def list_amis(
+    region: Optional[str] = None
+):
+    """List all Kamiwaza AMIs"""
+    try:
+        from app.aws_cdk_provisioner import AWSCDKProvisioner
+        import boto3
+        from botocore.exceptions import ClientError
+
+        # Get credentials
+        provisioner = AWSCDKProvisioner()
+        auth_method = settings.aws_auth_method
+
+        if not region:
+            region = "us-east-1"  # Default region
+
+        credentials = None
+
+        try:
+            if auth_method == "assume_role":
+                role_arn = settings.aws_assume_role_arn
+                external_id = settings.aws_external_id
+                session_name = settings.aws_session_name
+
+                if not role_arn:
+                    raise Exception("AWS_ASSUME_ROLE_ARN not configured")
+
+                credentials = provisioner.assume_role(
+                    role_arn=role_arn,
+                    session_name=session_name,
+                    external_id=external_id,
+                    region=region
+                )
+            elif auth_method == "access_keys":
+                access_key = settings.aws_access_key_id
+                secret_key = settings.aws_secret_access_key
+
+                if not access_key or not secret_key:
+                    raise Exception("AWS credentials not configured")
+
+                credentials = {
+                    'access_key': access_key,
+                    'secret_key': secret_key,
+                    'region': region
+                }
+        except Exception as e:
+            return JSONResponse({
+                "success": False,
+                "error": f"Failed to get AWS credentials: {str(e)}"
+            }, status_code=500)
+
+        # List AMIs
+        ec2_client = boto3.client(
+            'ec2',
+            region_name=region,
+            aws_access_key_id=credentials.get('access_key'),
+            aws_secret_access_key=credentials.get('secret_key'),
+            aws_session_token=credentials.get('session_token')
+        )
+
+        response = ec2_client.describe_images(
+            Filters=[
+                {
+                    'Name': 'tag:ManagedBy',
+                    'Values': ['KamiwazaDeploymentManager']
+                }
+            ],
+            Owners=['self']
+        )
+
+        amis = []
+        for image in response.get('Images', []):
+            # Extract tags
+            tags = {tag['Key']: tag['Value'] for tag in image.get('Tags', [])}
+
+            # Get snapshot info
+            snapshots = []
+            total_size = 0
+            for bdm in image.get('BlockDeviceMappings', []):
+                if 'Ebs' in bdm:
+                    snap_id = bdm['Ebs'].get('SnapshotId')
+                    size = bdm['Ebs'].get('VolumeSize', 0)
+                    if snap_id:
+                        snapshots.append(snap_id)
+                        total_size += size
+
+            amis.append({
+                'ami_id': image['ImageId'],
+                'name': image.get('Name', 'Unknown'),
+                'description': image.get('Description', ''),
+                'state': image.get('State', 'unknown'),
+                'creation_date': image.get('CreationDate', ''),
+                'size_gb': total_size,
+                'version': tags.get('KamiwazaVersion', 'Unknown'),
+                'created_from': tags.get('CreatedFrom', ''),
+                'created_from_job': tags.get('CreatedFromJob', ''),
+                'auto_created': tags.get('AutoCreated', 'false'),
+                'snapshots': snapshots,
+                'snapshot_count': len(snapshots)
+            })
+
+        # Sort by creation date (newest first)
+        amis.sort(key=lambda x: x['creation_date'], reverse=True)
+
+        return JSONResponse({
+            "success": True,
+            "amis": amis,
+            "region": region,
+            "count": len(amis)
+        })
+
+    except ClientError as e:
+        return JSONResponse({
+            "success": False,
+            "error": f"AWS error: {e.response['Error']['Message']}"
+        }, status_code=500)
+    except Exception as e:
+        logger.error(f"Error listing AMIs: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+
+@app.post("/api/amis/{ami_id}/delete")
+async def delete_ami(
+    ami_id: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Delete an AMI and its associated snapshots"""
+    try:
+        body = await request.json()
+        csrf_token = body.get("csrf_token")
+        region = body.get("region", "us-east-1")
+
+        # Verify CSRF token
+        if not csrf_protection.verify_token(csrf_token):
+            return JSONResponse({
+                "success": False,
+                "error": "Invalid CSRF token"
+            }, status_code=403)
+
+        from app.aws_cdk_provisioner import AWSCDKProvisioner
+        import boto3
+
+        # Get credentials
+        provisioner = AWSCDKProvisioner()
+        auth_method = settings.aws_auth_method
+
+        credentials = None
+
+        try:
+            if auth_method == "assume_role":
+                role_arn = settings.aws_assume_role_arn
+                external_id = settings.aws_external_id
+                session_name = settings.aws_session_name
+
+                if not role_arn:
+                    raise Exception("AWS_ASSUME_ROLE_ARN not configured")
+
+                credentials = provisioner.assume_role(
+                    role_arn=role_arn,
+                    session_name=session_name,
+                    external_id=external_id,
+                    region=region
+                )
+            elif auth_method == "access_keys":
+                access_key = settings.aws_access_key_id
+                secret_key = settings.aws_secret_access_key
+
+                if not access_key or not secret_key:
+                    raise Exception("AWS credentials not configured")
+
+                credentials = {
+                    'access_key': access_key,
+                    'secret_key': secret_key,
+                    'region': region
+                }
+        except Exception as e:
+            return JSONResponse({
+                "success": False,
+                "error": f"Failed to get AWS credentials: {str(e)}"
+            }, status_code=500)
+
+        ec2_client = boto3.client(
+            'ec2',
+            region_name=region,
+            aws_access_key_id=credentials.get('access_key'),
+            aws_secret_access_key=credentials.get('secret_key'),
+            aws_session_token=credentials.get('session_token')
+        )
+
+        # Get AMI details first
+        ami_info = ec2_client.describe_images(ImageIds=[ami_id])
+        if not ami_info['Images']:
+            return JSONResponse({
+                "success": False,
+                "error": f"AMI {ami_id} not found"
+            }, status_code=404)
+
+        image = ami_info['Images'][0]
+        ami_name = image.get('Name', 'Unknown')
+
+        # Get snapshots
+        snapshots = []
+        for bdm in image.get('BlockDeviceMappings', []):
+            if 'Ebs' in bdm and 'SnapshotId' in bdm['Ebs']:
+                snapshots.append(bdm['Ebs']['SnapshotId'])
+
+        # Deregister AMI
+        logger.info(f"Deleting AMI {ami_id} ({ami_name})")
+        ec2_client.deregister_image(ImageId=ami_id)
+
+        # Delete snapshots
+        deleted_snapshots = []
+        for snap_id in snapshots:
+            try:
+                ec2_client.delete_snapshot(SnapshotId=snap_id)
+                deleted_snapshots.append(snap_id)
+                logger.info(f"Deleted snapshot {snap_id}")
+            except Exception as e:
+                logger.warning(f"Failed to delete snapshot {snap_id}: {str(e)}")
+
+        return JSONResponse({
+            "success": True,
+            "message": f"AMI {ami_id} deleted successfully",
+            "ami_id": ami_id,
+            "ami_name": ami_name,
+            "deleted_snapshots": len(deleted_snapshots),
+            "snapshots": deleted_snapshots
+        })
+
+    except ClientError as e:
+        error_msg = e.response['Error']['Message']
+        logger.error(f"AWS error deleting AMI {ami_id}: {error_msg}")
+        return JSONResponse({
+            "success": False,
+            "error": f"AWS error: {error_msg}"
+        }, status_code=500)
+    except Exception as e:
+        logger.error(f"Error deleting AMI {ami_id}: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
 
 
 if __name__ == "__main__":

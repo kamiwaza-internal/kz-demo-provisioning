@@ -121,16 +121,74 @@ fi
 # Set environment variables for deployment mode
 # KAMIWAZA_LITE=true for lite mode, false for full stack
 # KAMIWAZA_USE_AUTH=true enables Keycloak authentication (full mode only)
-# Using -E flag to preserve environment variables through su
+# Using sudo -E to preserve environment variables
 log "Deployment mode: $KAMIWAZA_DEPLOYMENT_MODE (KAMIWAZA_LITE=$KAMIWAZA_LITE, KAMIWAZA_USE_AUTH=$KAMIWAZA_USE_AUTH)"
-su -E $KAMIWAZA_USER -c "kamiwaza start" 2>&1 | tee -a /var/log/kamiwaza-startup.log &
+sudo -E -u $KAMIWAZA_USER bash -c "kamiwaza start" 2>&1 | tee -a /var/log/kamiwaza-startup.log &
 KAMIWAZA_PID=$!
 
 log "✓ Kamiwaza start command initiated (PID: $KAMIWAZA_PID)"
 
-# Wait a moment for services to initialize
-log "Waiting for Kamiwaza to initialize..."
-sleep 30
+# Wait for services to initialize with proper health checking
+log "Waiting for Kamiwaza services to initialize..."
+log "This may take several minutes as Docker images are pulled and containers start..."
+
+# Function to check service health
+check_kamiwaza_status() {
+    sudo -u $KAMIWAZA_USER bash -c "kamiwaza status" 2>/dev/null
+}
+
+# Function to count running services
+count_running_services() {
+    check_kamiwaza_status | grep -c "RUNNING" || echo "0"
+}
+
+# Function to check for error state
+check_for_errors() {
+    check_kamiwaza_status | grep -q "ERROR"
+}
+
+# Wait up to 5 minutes for initial startup
+MAX_WAIT=300
+ELAPSED=0
+SLEEP_INTERVAL=15
+
+while [ $ELAPSED -lt $MAX_WAIT ]; do
+    sleep $SLEEP_INTERVAL
+    ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
+
+    RUNNING_COUNT=$(count_running_services)
+    log "Status check ($ELAPSED/${MAX_WAIT}s): $RUNNING_COUNT/5 services running"
+
+    # Check if all 5 services are running
+    if [ "$RUNNING_COUNT" -eq 5 ]; then
+        log "✓ All 5 services are running!"
+        break
+    fi
+
+    # Check for error state after first minute
+    if [ $ELAPSED -ge 60 ] && check_for_errors; then
+        log "⚠ Detected services in ERROR state, attempting restart..."
+        sudo -u $KAMIWAZA_USER bash -c "kamiwaza restart" 2>&1 | tee -a /var/log/kamiwaza-startup.log
+        sleep 30
+    fi
+done
+
+# Final status check
+FINAL_RUNNING=$(count_running_services)
+log "Final service count: $FINAL_RUNNING/5 services running"
+
+if [ "$FINAL_RUNNING" -lt 5 ]; then
+    log "⚠ Warning: Not all services started successfully"
+    log "Current status:"
+    check_kamiwaza_status | tee -a /var/log/kamiwaza-deployment.log
+    log ""
+    log "Attempting one final restart to recover..."
+    sudo -u $KAMIWAZA_USER bash -c "kamiwaza restart" 2>&1 | tee -a /var/log/kamiwaza-startup.log
+    sleep 60
+
+    FINAL_RUNNING=$(count_running_services)
+    log "After restart: $FINAL_RUNNING/5 services running"
+fi
 
 # Step 5: Verify deployment
 log "Step 5: Verifying deployment..."
@@ -150,23 +208,30 @@ log "=========================================="
 log "Kamiwaza Installation Completed!"
 log "=========================================="
 log ""
-log "Deployment Mode: FULL (KAMIWAZA_LITE=false)"
+log "Deployment Mode: $KAMIWAZA_DEPLOYMENT_MODE (KAMIWAZA_LITE=$KAMIWAZA_LITE)"
+log ""
+log "Service Status: $FINAL_RUNNING/5 services running"
 log ""
 log "Instance Information:"
 log "  Public IP: $PUBLIC_IP"
 log "  Private IP: $PRIVATE_IP"
 log ""
 log "Kamiwaza URLs:"
-log "  HTTPS: https://$PUBLIC_IP"
-log "  HTTP: http://$PUBLIC_IP (may redirect to HTTPS)"
+log "  HTTPS: https://$PUBLIC_IP (recommended)"
+log "  Note: Only HTTPS (port 443) is available, HTTP (port 80) is not configured"
 log ""
 log "Default Credentials:"
 log "  Username: admin"
 log "  Password: kamiwaza"
 log ""
-log "⏳ Note: Full mode may take 10-20 minutes to fully start"
-log "   (includes all services: auth, vector DB, observability, etc.)"
-log "   Monitor progress with: sudo tail -f /var/log/kamiwaza-startup.log"
+if [ "$FINAL_RUNNING" -eq 5 ]; then
+    log "✓ All services are running and ready to use!"
+else
+    log "⚠ Warning: Not all services started successfully"
+    log "   You may need to manually run: kamiwaza restart"
+    log "   Check status with: kamiwaza status"
+    log "   Monitor logs: sudo tail -f /var/log/kamiwaza-startup.log"
+fi
 log ""
 log "Management Commands:"
 log "  Start:   kamiwaza start"
@@ -184,11 +249,14 @@ cat > /home/$KAMIWAZA_USER/README_KAMIWAZA.md <<EOF
 
 ## Access Information
 
-- **Kamiwaza URL**: https://$PUBLIC_IP
+- **Kamiwaza URL**: https://$PUBLIC_IP (HTTPS only)
 - **Username**: admin
 - **Password**: kamiwaza
 
-⏳ **Note**: Kamiwaza may take 5-15 minutes after deployment to be fully accessible.
+⚠️ **Important**:
+- Only HTTPS (port 443) is available
+- You will see a browser security warning about a self-signed certificate - this is normal
+- Click "Advanced" and "Proceed" to access the UI
 
 ## Service Management
 
@@ -209,11 +277,17 @@ sudo systemctl stop kamiwaza
 
 ### Check Status
 \`\`\`bash
+# Check Kamiwaza service status
+kamiwaza status
+
 # Check running containers
 docker ps | grep kamiwaza
 
 # Check logs
 sudo tail -f /var/log/kamiwaza-startup.log
+
+# Run diagnostics
+kamiwaza doctor
 \`\`\`
 
 ## Removal

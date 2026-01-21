@@ -765,6 +765,15 @@ def check_kamiwaza_readiness(self, job_id: int):
                         )
                         db.add(log)
                         db.commit()
+
+                        # Trigger automatic AMI creation (if not already in progress)
+                        if not job.ami_creation_status or job.ami_creation_status == "pending":
+                            logger.info(f"Triggering automatic AMI creation for job {job_id}")
+                            job.ami_creation_status = "pending"
+                            db.commit()
+                            # Schedule AMI creation in 30 seconds to allow final setup
+                            create_ami_after_deployment.apply_async(args=[job_id], countdown=30)
+
                         return
                     else:
                         logger.info(f"Got 200 but content doesn't look like Kamiwaza for job {job_id}")
@@ -806,6 +815,300 @@ def check_kamiwaza_readiness(self, job_id: int):
 
     except Exception as e:
         logger.error(f"Error in readiness check for job {job_id}: {str(e)}", exc_info=True)
+
+    finally:
+        db.close()
+
+
+# ============================================================================
+# AUTOMATIC AMI CREATION TASK
+# ============================================================================
+
+def check_ami_exists_for_version(version: str, region: str, credentials: Dict) -> Optional[str]:
+    """
+    Check if an AMI already exists for a given Kamiwaza version.
+
+    Args:
+        version: Kamiwaza version (e.g., "v0.9.2" or "release/0.9.2")
+        region: AWS region
+        credentials: AWS credentials dict
+
+    Returns:
+        AMI ID if found, None otherwise
+    """
+    try:
+        # Normalize version to format like "v0.9.2"
+        if version.startswith("release/"):
+            version = "v" + version.replace("release/", "")
+        elif not version.startswith("v"):
+            version = "v" + version
+
+        ec2_client = boto3.client(
+            'ec2',
+            region_name=region,
+            aws_access_key_id=credentials.get('access_key'),
+            aws_secret_access_key=credentials.get('secret_key'),
+            aws_session_token=credentials.get('session_token')
+        )
+
+        # Search for AMIs with the KamiwazaVersion tag
+        response = ec2_client.describe_images(
+            Filters=[
+                {
+                    'Name': 'tag:KamiwazaVersion',
+                    'Values': [version]
+                },
+                {
+                    'Name': 'tag:ManagedBy',
+                    'Values': ['KamiwazaDeploymentManager']
+                },
+                {
+                    'Name': 'state',
+                    'Values': ['available']
+                }
+            ],
+            Owners=['self']
+        )
+
+        images = response.get('Images', [])
+        if images:
+            # Return the most recent AMI
+            images.sort(key=lambda x: x['CreationDate'], reverse=True)
+            ami_id = images[0]['ImageId']
+            logger.info(f"Found existing AMI {ami_id} for version {version}")
+            return ami_id
+
+        return None
+
+    except Exception as e:
+        logger.warning(f"Error checking for existing AMI: {str(e)}")
+        return None
+
+
+@celery_app.task(bind=True, name='worker.tasks.create_ami_after_deployment')
+def create_ami_after_deployment(self, job_id: int):
+    """
+    Create an AMI from a successfully deployed Kamiwaza instance.
+    This is called after readiness check passes.
+    """
+    db = SessionLocal()
+
+    try:
+        # Get job from database
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            logger.error(f"Job {job_id} not found for AMI creation")
+            return
+
+        # Only create AMI for Kamiwaza deployments
+        if job.deployment_type != "kamiwaza":
+            logger.info(f"Job {job_id} is not a Kamiwaza deployment, skipping AMI creation")
+            job.ami_creation_status = "skipped"
+            db.commit()
+            return
+
+        # Skip if AMI creation already attempted
+        if job.ami_creation_status in ["creating", "completed"]:
+            logger.info(f"Job {job_id} AMI creation already {job.ami_creation_status}")
+            return
+
+        # Check if we have instance ID
+        if not job.instance_id:
+            logger.warning(f"Job {job_id} has no instance ID, cannot create AMI")
+            job.ami_creation_status = "failed"
+            job.ami_creation_error = "No instance ID available"
+            db.commit()
+            return
+
+        def log_message(level: str, message: str):
+            """Helper to log messages"""
+            log = JobLog(
+                job_id=job.id,
+                level=level,
+                message=message,
+                source="ami-creation"
+            )
+            db.add(log)
+            db.commit()
+            logger.log(getattr(logging, level.upper()), f"AMI creation for job {job_id}: {message}")
+
+        log_message("info", "Starting automatic AMI creation...")
+
+        # Get AWS credentials
+        from app.aws_cdk_provisioner import AWSCDKProvisioner
+        provisioner = AWSCDKProvisioner()
+
+        auth_method = os.environ.get("AWS_AUTH_METHOD", "access_keys")
+        credentials = None
+
+        try:
+            if auth_method == "assume_role":
+                role_arn = os.environ.get("AWS_ASSUME_ROLE_ARN")
+                external_id = os.environ.get("AWS_EXTERNAL_ID")
+                session_name = os.environ.get("AWS_SESSION_NAME", "kamiwaza-provisioner")
+
+                if not role_arn:
+                    raise Exception("AWS_ASSUME_ROLE_ARN not configured")
+
+                credentials = provisioner.assume_role(
+                    role_arn=role_arn,
+                    session_name=session_name,
+                    external_id=external_id,
+                    region=job.aws_region
+                )
+            elif auth_method == "access_keys":
+                access_key = os.environ.get("AWS_ACCESS_KEY_ID")
+                secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+
+                if not access_key or not secret_key:
+                    raise Exception("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY not configured")
+
+                credentials = {
+                    'access_key': access_key,
+                    'secret_key': secret_key,
+                    'region': job.aws_region
+                }
+        except Exception as e:
+            log_message("error", f"Failed to get AWS credentials: {str(e)}")
+            job.ami_creation_status = "failed"
+            job.ami_creation_error = str(e)
+            db.commit()
+            return
+
+        # Extract Kamiwaza version from branch
+        kamiwaza_version = job.kamiwaza_branch or "v0.9.2"
+        if kamiwaza_version.startswith("release/"):
+            kamiwaza_version = "v" + kamiwaza_version.replace("release/", "")
+        elif not kamiwaza_version.startswith("v"):
+            kamiwaza_version = "v" + kamiwaza_version
+
+        log_message("info", f"Checking for existing AMI for Kamiwaza {kamiwaza_version}...")
+
+        # Check if AMI already exists for this version
+        existing_ami = check_ami_exists_for_version(
+            kamiwaza_version,
+            job.aws_region,
+            credentials
+        )
+
+        if existing_ami:
+            log_message("info", f"✓ AMI already exists for {kamiwaza_version}: {existing_ami}")
+            log_message("info", "Skipping AMI creation (version already cached)")
+            job.ami_creation_status = "skipped"
+            job.created_ami_id = existing_ami
+            db.commit()
+            return
+
+        log_message("info", f"No existing AMI found for {kamiwaza_version}, creating new AMI...")
+
+        # Update status
+        job.ami_creation_status = "creating"
+        db.commit()
+
+        # Create EC2 client
+        ec2_client = boto3.client(
+            'ec2',
+            region_name=job.aws_region,
+            aws_access_key_id=credentials.get('access_key'),
+            aws_secret_access_key=credentials.get('secret_key'),
+            aws_session_token=credentials.get('session_token')
+        )
+
+        # Generate AMI name
+        timestamp = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
+        ami_name = f"kamiwaza-golden-{kamiwaza_version}-{timestamp}"
+        ami_description = f"Kamiwaza {kamiwaza_version} pre-installed on Ubuntu 24.04 LTS (auto-created from job {job.id})"
+
+        log_message("info", f"Creating AMI: {ami_name}")
+
+        # Create the AMI (with reboot for consistency)
+        response = ec2_client.create_image(
+            InstanceId=job.instance_id,
+            Name=ami_name,
+            Description=ami_description,
+            NoReboot=False,  # Reboot for filesystem consistency
+            TagSpecifications=[
+                {
+                    'ResourceType': 'image',
+                    'Tags': [
+                        {'Key': 'Name', 'Value': ami_name},
+                        {'Key': 'KamiwazaVersion', 'Value': kamiwaza_version},
+                        {'Key': 'CreatedFrom', 'Value': job.instance_id},
+                        {'Key': 'CreatedFromJob', 'Value': str(job.id)},
+                        {'Key': 'ManagedBy', 'Value': 'KamiwazaDeploymentManager'},
+                        {'Key': 'CreatedAt', 'Value': timestamp},
+                        {'Key': 'AutoCreated', 'Value': 'true'}
+                    ]
+                }
+            ]
+        )
+
+        ami_id = response['ImageId']
+        job.created_ami_id = ami_id
+        db.commit()
+
+        log_message("info", f"✓ AMI creation initiated: {ami_id}")
+        log_message("info", "Waiting for AMI to become available (this may take 10-15 minutes)...")
+
+        # Wait for AMI to be available
+        waiter = ec2_client.get_waiter('image_available')
+        waiter.wait(
+            ImageIds=[ami_id],
+            WaiterConfig={
+                'Delay': 30,  # Check every 30 seconds
+                'MaxAttempts': 40  # Wait up to 20 minutes
+            }
+        )
+
+        # Get AMI details
+        ami_info = ec2_client.describe_images(ImageIds=[ami_id])
+        if ami_info['Images']:
+            ami_size = ami_info['Images'][0]['BlockDeviceMappings'][0]['Ebs']['VolumeSize']
+            log_message("info", f"✓ AMI is now available! Size: {ami_size} GB")
+
+        # Mark as completed
+        job.ami_creation_status = "completed"
+        job.ami_created_at = datetime.utcnow()
+        db.commit()
+
+        log_message("info", "=" * 60)
+        log_message("info", f"✓ AMI Created Successfully: {ami_id}")
+        log_message("info", f"Version: {kamiwaza_version}")
+        log_message("info", f"Region: {job.aws_region}")
+        log_message("info", "This AMI can now be used for faster future deployments!")
+        log_message("info", "=" * 60)
+
+    except ClientError as e:
+        error_msg = f"AWS error creating AMI: {e.response['Error']['Message']}"
+        logger.error(f"Job {job_id}: {error_msg}")
+        job.ami_creation_status = "failed"
+        job.ami_creation_error = error_msg
+        db.commit()
+
+        log = JobLog(
+            job_id=job.id,
+            level="error",
+            message=error_msg,
+            source="ami-creation"
+        )
+        db.add(log)
+        db.commit()
+
+    except Exception as e:
+        error_msg = f"Unexpected error creating AMI: {str(e)}"
+        logger.error(f"Job {job_id}: {error_msg}", exc_info=True)
+        job.ami_creation_status = "failed"
+        job.ami_creation_error = error_msg
+        db.commit()
+
+        log = JobLog(
+            job_id=job.id,
+            level="error",
+            message=error_msg,
+            source="ami-creation"
+        )
+        db.add(log)
+        db.commit()
 
     finally:
         db.close()

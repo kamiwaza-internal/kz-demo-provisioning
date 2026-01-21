@@ -58,6 +58,12 @@ class Job(Base):
     kamiwaza_checked_at = Column(DateTime, nullable=True)
     kamiwaza_check_attempts = Column(Integer, default=0)
 
+    # AMI Creation (for caching)
+    created_ami_id = Column(String(100), nullable=True)  # AMI created from this deployment
+    ami_creation_status = Column(String(20), nullable=True)  # pending/creating/completed/failed/skipped
+    ami_created_at = Column(DateTime, nullable=True)
+    ami_creation_error = Column(Text, nullable=True)
+
     # Notifications
     requester_email = Column(String(255), nullable=False)
     email_sent = Column(Boolean, default=False)

@@ -36,15 +36,6 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
         <div class="form-group">
-            <label for="deployment_mode">Kamiwaza Deployment Mode *</label>
-            <select id="deployment_mode" name="deployment_mode" required>
-                <option value="lite">Lite - Lightweight deployment (recommended for demos)</option>
-                <option value="full">Full - Complete deployment with all services</option>
-            </select>
-            <small>Select whether to deploy Kamiwaza in lite or full mode on the EC2 instances</small>
-        </div>
-
-        <div class="form-group">
             <label for="csv_file">User CSV File *</label>
             <input type="file" id="csv_file" name="csv_file" accept=".csv" required>
             <small>Upload a CSV file with email and role columns</small>
@@ -222,9 +213,7 @@ document.getElementById('provisionForm').addEventListener('submit', function(e) 
     const file = document.getElementById('csv_file').files[0];
     if (file) {
         const kamiwazaUrl = '{{ kamiwaza_url }}';
-        const deploymentMode = document.getElementById('deployment_mode').value;
-        const modeName = deploymentMode === 'lite' ? 'Lite (recommended for demos)' : 'Full (complete deployment)';
-        const confirmed = confirm(`Are you sure you want to start provisioning users?\n\nTarget Kamiwaza: ${kamiwazaUrl}\nDeployment Mode: ${modeName}\n\nThis will create Kamiwaza users and deploy Kaizen instances.`);
+        const confirmed = confirm(`Are you sure you want to start provisioning users?\n\nTarget Kamiwaza: ${kamiwazaUrl}\n\nThis will create Kamiwaza users and deploy Kaizen instances.`);
         if (!confirmed) {
             e.preventDefault();
         }
