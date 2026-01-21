@@ -44,8 +44,83 @@
     </div>
 </div>
 
-<!-- EC2 Instance Info (if available) -->
-{% if job.instance_id %}
+<!-- Kamiwaza Access Info (if Kamiwaza deployment and successful) -->
+{% if job.deployment_type == 'kamiwaza' and job.status == 'success' and job.public_ip %}
+    {% if job.kamiwaza_ready %}
+        <!-- Kamiwaza is ready and accessible -->
+        <div class="card" style="background: #e8f5e9; border-left: 4px solid #4caf50;">
+            <h3 style="color: #2e7d32;">✓ Kamiwaza is Ready!</h3>
+
+            <div style="margin: 1.5rem 0;">
+                <p style="font-size: 1.1rem; margin-bottom: 0.5rem;"><strong>Access Your Kamiwaza Instance:</strong></p>
+                <a href="https://{{ job.public_ip }}" target="_blank" class="btn btn-primary" style="font-size: 1.1rem; padding: 0.75rem 1.5rem;">
+                    🚀 Open Kamiwaza (https://{{ job.public_ip }})
+                </a>
+            </div>
+
+            <div class="alert alert-info" style="margin-top: 1rem;">
+                <strong>Default Credentials:</strong><br>
+                Username: <code>admin</code><br>
+                Password: <code>kamiwaza</code><br>
+                <small style="color: #666;">⚠️ Please change these credentials after your first login</small>
+            </div>
+
+            <div style="margin-top: 1rem;">
+                <p><strong>Instance ID:</strong> {{ job.instance_id }}</p>
+                <p><strong>Public IP:</strong> {{ job.public_ip }}</p>
+                {% if job.private_ip %}
+                <p><strong>Private IP:</strong> {{ job.private_ip }}</p>
+                {% endif %}
+            </div>
+        </div>
+    {% else %}
+        <!-- Kamiwaza is still deploying -->
+        <div class="card" style="background: #fff3cd; border-left: 4px solid #ffc107;">
+            <h3 style="color: #856404;">⏳ Kamiwaza is Deploying...</h3>
+
+            <div class="alert alert-warning" style="margin-top: 1rem;">
+                <strong>EC2 Instance Launched Successfully</strong><br>
+                Kamiwaza is currently being installed on the EC2 instance. This process typically takes 10-20 minutes.
+            </div>
+
+            <div style="margin: 1.5rem 0;" id="kamiwaza-progress-container">
+                <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">
+                    <strong>Deployment Progress:</strong>
+                    <span id="kamiwaza-status">Checking status...</span>
+                </p>
+
+                <!-- Progress bar -->
+                <div style="width: 100%; background: #e0e0e0; border-radius: 4px; height: 24px; margin: 1rem 0; overflow: hidden;">
+                    <div id="progress-bar" style="height: 100%; background: linear-gradient(90deg, #4caf50, #8bc34a); width: 0%; transition: width 0.5s ease; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.9rem;">
+                    </div>
+                </div>
+
+                <p style="color: #666; font-size: 0.9rem;">
+                    Checks performed: <span id="check-attempts">{{ job.kamiwaza_check_attempts or 0 }}</span> / 60
+                </p>
+            </div>
+
+            <div style="margin-top: 1rem;">
+                <p><strong>Instance ID:</strong> {{ job.instance_id }}</p>
+                <p><strong>Public IP:</strong> {{ job.public_ip }}</p>
+                {% if job.private_ip %}
+                <p><strong>Private IP:</strong> {{ job.private_ip }}</p>
+                {% endif %}
+                <p><strong>Target URL:</strong> <code>https://{{ job.public_ip }}</code></p>
+            </div>
+
+            <div class="alert alert-info" style="margin-top: 1rem;">
+                <strong>Monitor Deployment Progress:</strong><br>
+                You can SSH into the instance to view real-time logs:<br>
+                <code>ssh ubuntu@{{ job.public_ip }} -i your-key.pem</code><br>
+                <code>sudo tail -f /var/log/kamiwaza-deployment.log</code>
+            </div>
+        </div>
+    {% endif %}
+{% endif %}
+
+<!-- EC2 Instance Info (for non-Kamiwaza or when IP available) -->
+{% if job.instance_id and not (job.deployment_type == 'kamiwaza' and job.status == 'success') %}
 <div class="card">
     <h3>EC2 Instance</h3>
     <p><strong>Instance ID:</strong> {{ job.instance_id }}</p>
@@ -56,7 +131,7 @@
     <p><strong>Private IP:</strong> {{ job.private_ip }}</p>
     {% endif %}
 
-    {% if job.dockerhub_images %}
+    {% if job.dockerhub_images and job.deployment_type != 'kamiwaza' %}
     <h4 style="margin-top: 1rem;">Running Containers:</h4>
     <ul>
         {% for container in job.dockerhub_images %}
@@ -197,6 +272,61 @@ function pollLogs() {
 // Start polling if job is running or queued
 {% if job.status in ['queued', 'running'] %}
 pollInterval = setInterval(pollLogs, 2000);
+{% endif %}
+
+// Kamiwaza readiness polling
+{% if job.deployment_type == 'kamiwaza' and job.status == 'success' and not job.kamiwaza_ready %}
+let readinessInterval = null;
+let progressBar = document.getElementById('progress-bar');
+let statusElement = document.getElementById('kamiwaza-status');
+let checkAttemptsElement = document.getElementById('check-attempts');
+
+function pollKamiwazaReadiness() {
+    fetch(`/api/jobs/{{ job.id }}`)
+        .then(response => response.json())
+        .then(data => {
+            // Update check attempts
+            if (checkAttemptsElement && data.kamiwaza_check_attempts) {
+                checkAttemptsElement.textContent = data.kamiwaza_check_attempts;
+            }
+
+            // Update progress bar (60 max attempts)
+            if (progressBar && data.kamiwaza_check_attempts) {
+                const progress = Math.min((data.kamiwaza_check_attempts / 60) * 100, 100);
+                progressBar.style.width = progress + '%';
+                progressBar.textContent = Math.round(progress) + '%';
+            }
+
+            // Update status message
+            if (statusElement) {
+                if (data.kamiwaza_ready) {
+                    statusElement.innerHTML = '<span style="color: #4caf50; font-weight: 600;">✓ Login page is accessible!</span>';
+                } else {
+                    const dots = '.'.repeat((data.kamiwaza_check_attempts || 0) % 4);
+                    statusElement.innerHTML = `<span style="color: #ff9800;">Checking${dots}</span>`;
+                }
+            }
+
+            // If Kamiwaza is ready, reload the page to show the access button
+            if (data.kamiwaza_ready) {
+                if (readinessInterval) {
+                    clearInterval(readinessInterval);
+                    readinessInterval = null;
+                }
+                // Reload page after 2 seconds to show success state
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+            }
+        })
+        .catch(error => {
+            console.error('Error polling Kamiwaza readiness:', error);
+        });
+}
+
+// Start polling for Kamiwaza readiness
+readinessInterval = setInterval(pollKamiwazaReadiness, 5000);  // Check every 5 seconds
+pollKamiwazaReadiness();  // Call immediately
 {% endif %}
 </script>
 {% endblock %}

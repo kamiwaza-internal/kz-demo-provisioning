@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     kamiwaza_password: str = "kamiwaza"
     kamiwaza_db_path: str = "/opt/kamiwaza/db-lite/kamiwaza.db"
 
+    # Kamiwaza Package
+    kamiwaza_package_url: str = "https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb"
+
     # Script Paths
     kamiwaza_provision_script: str = "/Users/steffenmerten/Code/kamiwaza/scripts/provision_users.py"
     kaizen_source: str = "/Users/steffenmerten/Code/kaizen-v3/apps/kaizenv3"
@@ -60,7 +63,7 @@ class Settings(BaseSettings):
 
     # Security & Validation
     allowed_regions: str = "us-east-1,us-west-2,eu-west-1,eu-central-1"
-    allowed_instance_types: str = "t3.micro,t3.small,t3.medium,t3.large,t2.micro,t2.small"
+    allowed_instance_types: str = "t3.xlarge,c7i.48xlarge"
     allow_access_key_auth: bool = False
 
     # Terraform

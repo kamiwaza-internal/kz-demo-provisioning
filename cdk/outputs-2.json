@@ -1,0 +1,8 @@
+{
+  "kamiwaza-job-2": {
+    "InstanceId": "i-0584cc387d463ceed",
+    "PublicIP": "98.92.214.233",
+    "PrivateIP": "10.0.2.30",
+    "SecurityGroupId": "sg-0011c1244cc57f56f"
+  }
+}

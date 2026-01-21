@@ -1,0 +1,741 @@
+{
+ "Resources": {
+  "KamiwazaVPCB2EC84F0": {
+   "Type": "AWS::EC2::VPC",
+   "Properties": {
+    "CidrBlock": "10.0.0.0/16",
+    "EnableDnsHostnames": true,
+    "EnableDnsSupport": true,
+    "InstanceTenancy": "default",
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "kamiwaza-job-5/KamiwazaVPC"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/Resource"
+   }
+  },
+  "KamiwazaVPCPublicSubnet1Subnet16CC561E": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": "us-east-1a",
+    "CidrBlock": "10.0.0.0/18",
+    "MapPublicIpOnLaunch": true,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "Public"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Public"
+     },
+     {
+      "Key": "Name",
+      "Value": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "KamiwazaVPCB2EC84F0"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet1/Subnet"
+   }
+  },
+  "KamiwazaVPCPublicSubnet1RouteTable70CBF568": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "KamiwazaVPCB2EC84F0"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet1/RouteTable"
+   }
+  },
+  "KamiwazaVPCPublicSubnet1RouteTableAssociationB853504B": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "KamiwazaVPCPublicSubnet1RouteTable70CBF568"
+    },
+    "SubnetId": {
+     "Ref": "KamiwazaVPCPublicSubnet1Subnet16CC561E"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet1/RouteTableAssociation"
+   }
+  },
+  "KamiwazaVPCPublicSubnet1DefaultRoute211374BB": {
+   "Type": "AWS::EC2::Route",
+   "Properties": {
+    "DestinationCidrBlock": "0.0.0.0/0",
+    "GatewayId": {
+     "Ref": "KamiwazaVPCIGW1C2B07AA"
+    },
+    "RouteTableId": {
+     "Ref": "KamiwazaVPCPublicSubnet1RouteTable70CBF568"
+    }
+   },
+   "DependsOn": [
+    "KamiwazaVPCVPCGWC343B2BC"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet1/DefaultRoute"
+   }
+  },
+  "KamiwazaVPCPublicSubnet1EIPC397BDDA": {
+   "Type": "AWS::EC2::EIP",
+   "Properties": {
+    "Domain": "vpc",
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet1"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet1/EIP"
+   }
+  },
+  "KamiwazaVPCPublicSubnet1NATGatewayEC5E1C3B": {
+   "Type": "AWS::EC2::NatGateway",
+   "Properties": {
+    "AllocationId": {
+     "Fn::GetAtt": [
+      "KamiwazaVPCPublicSubnet1EIPC397BDDA",
+      "AllocationId"
+     ]
+    },
+    "SubnetId": {
+     "Ref": "KamiwazaVPCPublicSubnet1Subnet16CC561E"
+    },
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet1"
+     }
+    ]
+   },
+   "DependsOn": [
+    "KamiwazaVPCPublicSubnet1DefaultRoute211374BB",
+    "KamiwazaVPCPublicSubnet1RouteTableAssociationB853504B"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet1/NATGateway"
+   }
+  },
+  "KamiwazaVPCPublicSubnet2Subnet59CC51FB": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": "us-east-1b",
+    "CidrBlock": "10.0.64.0/18",
+    "MapPublicIpOnLaunch": true,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "Public"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Public"
+     },
+     {
+      "Key": "Name",
+      "Value": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "KamiwazaVPCB2EC84F0"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet2/Subnet"
+   }
+  },
+  "KamiwazaVPCPublicSubnet2RouteTable89EFDB9E": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "KamiwazaVPCB2EC84F0"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet2/RouteTable"
+   }
+  },
+  "KamiwazaVPCPublicSubnet2RouteTableAssociation5BCF936C": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "KamiwazaVPCPublicSubnet2RouteTable89EFDB9E"
+    },
+    "SubnetId": {
+     "Ref": "KamiwazaVPCPublicSubnet2Subnet59CC51FB"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet2/RouteTableAssociation"
+   }
+  },
+  "KamiwazaVPCPublicSubnet2DefaultRoute895FE943": {
+   "Type": "AWS::EC2::Route",
+   "Properties": {
+    "DestinationCidrBlock": "0.0.0.0/0",
+    "GatewayId": {
+     "Ref": "KamiwazaVPCIGW1C2B07AA"
+    },
+    "RouteTableId": {
+     "Ref": "KamiwazaVPCPublicSubnet2RouteTable89EFDB9E"
+    }
+   },
+   "DependsOn": [
+    "KamiwazaVPCVPCGWC343B2BC"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PublicSubnet2/DefaultRoute"
+   }
+  },
+  "KamiwazaVPCPrivateSubnet1Subnet7F6BFC22": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": "us-east-1a",
+    "CidrBlock": "10.0.128.0/18",
+    "MapPublicIpOnLaunch": false,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "Private"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Private"
+     },
+     {
+      "Key": "Name",
+      "Value": "kamiwaza-job-5/KamiwazaVPC/PrivateSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "KamiwazaVPCB2EC84F0"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PrivateSubnet1/Subnet"
+   }
+  },
+  "KamiwazaVPCPrivateSubnet1RouteTable7B1AC006": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "kamiwaza-job-5/KamiwazaVPC/PrivateSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "KamiwazaVPCB2EC84F0"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PrivateSubnet1/RouteTable"
+   }
+  },
+  "KamiwazaVPCPrivateSubnet1RouteTableAssociation0678E6C3": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "KamiwazaVPCPrivateSubnet1RouteTable7B1AC006"
+    },
+    "SubnetId": {
+     "Ref": "KamiwazaVPCPrivateSubnet1Subnet7F6BFC22"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PrivateSubnet1/RouteTableAssociation"
+   }
+  },
+  "KamiwazaVPCPrivateSubnet1DefaultRouteB08CBC8E": {
+   "Type": "AWS::EC2::Route",
+   "Properties": {
+    "DestinationCidrBlock": "0.0.0.0/0",
+    "NatGatewayId": {
+     "Ref": "KamiwazaVPCPublicSubnet1NATGatewayEC5E1C3B"
+    },
+    "RouteTableId": {
+     "Ref": "KamiwazaVPCPrivateSubnet1RouteTable7B1AC006"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PrivateSubnet1/DefaultRoute"
+   }
+  },
+  "KamiwazaVPCPrivateSubnet2Subnet7E476F41": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": "us-east-1b",
+    "CidrBlock": "10.0.192.0/18",
+    "MapPublicIpOnLaunch": false,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "Private"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Private"
+     },
+     {
+      "Key": "Name",
+      "Value": "kamiwaza-job-5/KamiwazaVPC/PrivateSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "KamiwazaVPCB2EC84F0"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PrivateSubnet2/Subnet"
+   }
+  },
+  "KamiwazaVPCPrivateSubnet2RouteTableA3410DC7": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "kamiwaza-job-5/KamiwazaVPC/PrivateSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "KamiwazaVPCB2EC84F0"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PrivateSubnet2/RouteTable"
+   }
+  },
+  "KamiwazaVPCPrivateSubnet2RouteTableAssociation07C19ED8": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "KamiwazaVPCPrivateSubnet2RouteTableA3410DC7"
+    },
+    "SubnetId": {
+     "Ref": "KamiwazaVPCPrivateSubnet2Subnet7E476F41"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PrivateSubnet2/RouteTableAssociation"
+   }
+  },
+  "KamiwazaVPCPrivateSubnet2DefaultRoute65B0BA55": {
+   "Type": "AWS::EC2::Route",
+   "Properties": {
+    "DestinationCidrBlock": "0.0.0.0/0",
+    "NatGatewayId": {
+     "Ref": "KamiwazaVPCPublicSubnet1NATGatewayEC5E1C3B"
+    },
+    "RouteTableId": {
+     "Ref": "KamiwazaVPCPrivateSubnet2RouteTableA3410DC7"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/PrivateSubnet2/DefaultRoute"
+   }
+  },
+  "KamiwazaVPCIGW1C2B07AA": {
+   "Type": "AWS::EC2::InternetGateway",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "kamiwaza-job-5/KamiwazaVPC"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/IGW"
+   }
+  },
+  "KamiwazaVPCVPCGWC343B2BC": {
+   "Type": "AWS::EC2::VPCGatewayAttachment",
+   "Properties": {
+    "InternetGatewayId": {
+     "Ref": "KamiwazaVPCIGW1C2B07AA"
+    },
+    "VpcId": {
+     "Ref": "KamiwazaVPCB2EC84F0"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/VPCGW"
+   }
+  },
+  "KamiwazaVPCRestrictDefaultSecurityGroupCustomResourceC10022AE": {
+   "Type": "Custom::VpcRestrictDefaultSG",
+   "Properties": {
+    "ServiceToken": {
+     "Fn::GetAtt": [
+      "CustomVpcRestrictDefaultSGCustomResourceProviderHandlerDC833E5E",
+      "Arn"
+     ]
+    },
+    "DefaultSecurityGroupId": {
+     "Fn::GetAtt": [
+      "KamiwazaVPCB2EC84F0",
+      "DefaultSecurityGroup"
+     ]
+    },
+    "Account": "916994818137"
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaVPC/RestrictDefaultSecurityGroupCustomResource/Default"
+   }
+  },
+  "CustomVpcRestrictDefaultSGCustomResourceProviderRole26592FE0": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Version": "2012-10-17",
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ]
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+     }
+    ],
+    "Policies": [
+     {
+      "PolicyName": "Inline",
+      "PolicyDocument": {
+       "Version": "2012-10-17",
+       "Statement": [
+        {
+         "Effect": "Allow",
+         "Action": [
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:AuthorizeSecurityGroupEgress",
+          "ec2:RevokeSecurityGroupIngress",
+          "ec2:RevokeSecurityGroupEgress"
+         ],
+         "Resource": [
+          {
+           "Fn::Join": [
+            "",
+            [
+             "arn:aws:ec2:us-east-1:916994818137:security-group/",
+             {
+              "Fn::GetAtt": [
+               "KamiwazaVPCB2EC84F0",
+               "DefaultSecurityGroup"
+              ]
+             }
+            ]
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/Custom::VpcRestrictDefaultSGCustomResourceProvider/Role"
+   }
+  },
+  "CustomVpcRestrictDefaultSGCustomResourceProviderHandlerDC833E5E": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-916994818137-us-east-1",
+     "S3Key": "7fa1e366ee8a9ded01fc355f704cff92bfd179574e6f9cfee800a3541df1b200.zip"
+    },
+    "Timeout": 900,
+    "MemorySize": 128,
+    "Handler": "__entrypoint__.handler",
+    "Role": {
+     "Fn::GetAtt": [
+      "CustomVpcRestrictDefaultSGCustomResourceProviderRole26592FE0",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs22.x",
+    "Description": "Lambda function for removing all inbound/outbound rules from the VPC default security group"
+   },
+   "DependsOn": [
+    "CustomVpcRestrictDefaultSGCustomResourceProviderRole26592FE0"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/Custom::VpcRestrictDefaultSGCustomResourceProvider/Handler",
+    "aws:asset:path": "asset.7fa1e366ee8a9ded01fc355f704cff92bfd179574e6f9cfee800a3541df1b200",
+    "aws:asset:property": "Code"
+   }
+  },
+  "KamiwazaSGFD941D5B": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "Security group for Kamiwaza job 5",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "SecurityGroupIngress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow SSH",
+      "FromPort": 22,
+      "IpProtocol": "tcp",
+      "ToPort": 22
+     },
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow HTTP",
+      "FromPort": 80,
+      "IpProtocol": "tcp",
+      "ToPort": 80
+     },
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow HTTPS",
+      "FromPort": 443,
+      "IpProtocol": "tcp",
+      "ToPort": 443
+     },
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow Docker app ports",
+      "FromPort": 8000,
+      "IpProtocol": "tcp",
+      "ToPort": 8100
+     }
+    ],
+    "VpcId": {
+     "Ref": "KamiwazaVPCB2EC84F0"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaSG/Resource"
+   }
+  },
+  "InstanceRole3CCE2F1D": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ec2.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Description": "IAM role for Kamiwaza EC2 instance (job 5)",
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/AmazonSSMManagedInstanceCore"
+       ]
+      ]
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/InstanceRole/Resource"
+   }
+  },
+  "KamiwazaInstanceInstanceProfileEFBAE96B": {
+   "Type": "AWS::IAM::InstanceProfile",
+   "Properties": {
+    "Roles": [
+     {
+      "Ref": "InstanceRole3CCE2F1D"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaInstance/InstanceProfile"
+   }
+  },
+  "KamiwazaInstance361554A9": {
+   "Type": "AWS::EC2::Instance",
+   "Properties": {
+    "AvailabilityZone": "us-east-1a",
+    "BlockDeviceMappings": [
+     {
+      "DeviceName": "/dev/xvda",
+      "Ebs": {
+       "DeleteOnTermination": true,
+       "Encrypted": true,
+       "VolumeSize": 30
+      }
+     }
+    ],
+    "IamInstanceProfile": {
+     "Ref": "KamiwazaInstanceInstanceProfileEFBAE96B"
+    },
+    "ImageId": {
+     "Ref": "SsmParameterValueawsserviceamiamazonlinuxlatestal2023amikernel61x8664C96584B6F00A464EAD1953AFF4B05118Parameter"
+    },
+    "InstanceType": "t3.xlarge",
+    "SecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "KamiwazaSGFD941D5B",
+       "GroupId"
+      ]
+     }
+    ],
+    "SubnetId": {
+     "Ref": "KamiwazaVPCPublicSubnet1Subnet16CC561E"
+    },
+    "Tags": [
+     {
+      "Key": "JobId",
+      "Value": "5"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "KamiwazaDeploymentManager"
+     },
+     {
+      "Key": "Name",
+      "Value": "test5"
+     }
+    ],
+    "UserData": {
+     "Fn::Base64": "#!/bin/bash\n\n# Kamiwaza Deployment Configuration\nexport KAMIWAZA_PACKAGE_URL='https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb'\nexport KAMIWAZA_ROOT='/opt/kamiwaza'\nexport KAMIWAZA_USER='ubuntu'\n\n#!/bin/bash\n#\n# Kamiwaza Full Stack Deployment Script for EC2\n# This script deploys the complete Kamiwaza platform on a fresh EC2 instance\n#\n# Usage: Run as root on EC2 instance startup (via user data)\n# Architecture: Supports AMD64 and ARM64\n# OS: Ubuntu 22.04 LTS or Amazon Linux 2023\n#\n\nset -euo pipefail\n\n# Logging functions\nlog() {\n    echo \"[$(date +'%Y-%m-%d %H:%M:%S')] $*\" | tee -a /var/log/kamiwaza-deployment.log\n}\n\nerror() {\n    echo \"[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $*\" | tee -a /var/log/kamiwaza-deployment.log >&2\n}\n\n# Configuration - can be overridden via environment variables\nKAMIWAZA_PACKAGE_URL=\"${KAMIWAZA_PACKAGE_URL:-https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb}\"\nKAMIWAZA_ROOT=\"${KAMIWAZA_ROOT:-/opt/kamiwaza}\"\nKAMIWAZA_USER=\"${KAMIWAZA_USER:-ubuntu}\"\n\n# Start deployment\nlog \"==========================================\"\nlog \"Kamiwaza Full Stack Deployment Starting\"\nlog \"==========================================\"\nlog \"Package URL: $KAMIWAZA_PACKAGE_URL\"\nlog \"Install Path: $KAMIWAZA_ROOT\"\nlog \"User: $KAMIWAZA_USER\"\n\n# Detect OS\nif [ -f /etc/os-release ]; then\n    . /etc/os-release\n    OS=$ID\n    VER=$VERSION_ID\n    log \"Detected OS: $OS $VER\"\nelse\n    error \"Cannot detect OS\"\n    exit 1\nfi\n\n# Detect architecture\nARCH=$(uname -m)\nlog \"Architecture: $ARCH\"\n\n# Step 1: Update system packages\nlog \"Step 1: Updating system packages...\"\ncase $OS in\n    ubuntu)\n        export DEBIAN_FRONTEND=noninteractive\n        apt-get update -y\n        apt-get upgrade -y\n        ;;\n    amzn)\n        yum update -y\n        ;;\n    *)\n        error \"Unsupported OS: $OS\"\n        exit 1\n        ;;\nesac\n\n# Step 2: Install Docker\nlog \"Step 2: Installing Docker...\"\nif ! command -v docker &> /dev/null; then\n    case $OS in\n        ubuntu)\n            # Install Docker on Ubuntu\n            apt-get install -y ca-certificates curl gnupg lsb-release\n            install -m 0755 -d /etc/apt/keyrings\n            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg\n            chmod a+r /etc/apt/keyrings/docker.gpg\n\n            echo \\\n              \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \\\n              $(lsb_release -cs) stable\" | tee /etc/apt/sources.list.d/docker.list > /dev/null\n\n            apt-get update -y\n            apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin\n            ;;\n        amzn)\n            # Install Docker on Amazon Linux\n            yum install -y docker\n            systemctl start docker\n            systemctl enable docker\n            ;;\n    esac\n\n    # Add user to docker group\n    usermod -aG docker $KAMIWAZA_USER || true\n\n    log \"Docker installed successfully\"\nelse\n    log \"Docker already installed\"\nfi\n\n# Verify Docker is running\nif ! systemctl is-active --quiet docker; then\n    systemctl start docker\nfi\n\n# Step 3: Install docker-compose (if not using Docker Compose plugin)\nlog \"Step 3: Checking Docker Compose...\"\nif docker compose version &> /dev/null; then\n    log \"Docker Compose (plugin) available\"\nelif command -v docker-compose &> /dev/null; then\n    log \"Docker Compose (standalone) available\"\nelse\n    log \"Installing Docker Compose...\"\n    curl -L \"https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)\" \\\n        -o /usr/local/bin/docker-compose\n    chmod +x /usr/local/bin/docker-compose\nfi\n\n# Step 4: Install system dependencies\nlog \"Step 4: Installing system dependencies...\"\ncase $OS in\n    ubuntu)\n        apt-get install -y \\\n            git \\\n            curl \\\n            wget \\\n            build-essential \\\n            python3 \\\n            python3-pip \\\n            python3-venv \\\n            jq \\\n            htop \\\n            vim \\\n            net-tools \\\n            lsof \\\n            redis-tools\n        ;;\n    amzn)\n        # Note: curl-minimal is already installed on Amazon Linux 2023\n        # Installing curl would conflict with curl-minimal\n        yum install -y \\\n            git \\\n            wget \\\n            gcc \\\n            gcc-c++ \\\n            make \\\n            python3 \\\n            python3-pip \\\n            jq \\\n            htop \\\n            vim \\\n            net-tools \\\n            lsof\n        ;;\nesac\n\n# Step 5: Install uv (Python package installer)\nlog \"Step 5: Installing uv...\"\nif ! command -v uv &> /dev/null; then\n    curl -LsSf https://astral.sh/uv/install.sh | sh\n    export PATH=\"$HOME/.local/bin:$PATH\"\n    log \"uv installed successfully\"\nelse\n    log \"uv already installed\"\nfi\n\n# Step 6: Download and install Kamiwaza .deb package\nlog \"Step 6: Downloading Kamiwaza package...\"\nTEMP_DEB=\"/tmp/kamiwaza.deb\"\ncurl -L -o \"$TEMP_DEB\" \"$KAMIWAZA_PACKAGE_URL\"\nif [ $? -ne 0 ]; then\n    error \"Failed to download Kamiwaza package from $KAMIWAZA_PACKAGE_URL\"\n    exit 1\nfi\nlog \"Package downloaded successfully\"\n\n# Step 7: Install Kamiwaza package\nlog \"Step 7: Installing Kamiwaza package...\"\ncase $OS in\n    ubuntu)\n        apt-get install -y \"$TEMP_DEB\"\n        ;;\n    amzn)\n        # Convert .deb to .rpm or use alien\n        yum install -y alien\n        alien -r \"$TEMP_DEB\"\n        rpm -ivh /tmp/kamiwaza*.rpm\n        ;;\nesac\n\nif [ $? -ne 0 ]; then\n    error \"Failed to install Kamiwaza package\"\n    exit 1\nfi\nlog \"Kamiwaza package installed successfully\"\n\n# Clean up temp file\nrm -f \"$TEMP_DEB\"\n\n# Set up Kamiwaza directory permissions\nlog \"Setting up Kamiwaza directory permissions...\"\nmkdir -p $KAMIWAZA_ROOT\nchown -R $KAMIWAZA_USER:$KAMIWAZA_USER $KAMIWAZA_ROOT\n\ncd $KAMIWAZA_ROOT\n\n# Step 8: Set up environment variables\nlog \"Step 8: Configuring environment variables...\"\nif [ ! -f \"$KAMIWAZA_ROOT/env.sh\" ]; then\n    cat > \"$KAMIWAZA_ROOT/env.sh\" <<EOF\n#!/bin/bash\n\n# Kamiwaza Environment Configuration\n\n# Environment name\nexport KAMIWAZA_ENV=default\n\n# Authentication (enable for full deployment)\nexport KAMIWAZA_USE_AUTH=true\n\n# Lite mode (false for full deployment)\nexport KAMIWAZA_LITE=false\n\n# Database backends\nexport KAMIWAZA_MILVUS_ENABLED=true\n\n# Observability (optional)\nexport KAMIWAZA_OTEL_ENABLED=false\nexport KAMIWAZA_LOKI_ENABLED=false\n\n# Ray configuration (optional - set if using distributed Ray)\n# export KAMIWAZA_HEAD_IP=\n# export KAMIWAZA_HEAD_PORT=6379\n\n# Docker volume directory\nexport DOCKER_VOLUME_DIRECTORY=/opt/kamiwaza\n\n# Admin credentials (change these in production!)\nexport KAMIWAZA_ADMIN_USERNAME=admin\nexport KAMIWAZA_ADMIN_PASSWORD=kamiwaza\n\n# Keycloak configuration\nexport KAMIWAZA_KEYCLOAK_ADMIN_PASSWORD=kamiwaza-admin\n\n# API Keys (pre-configured from deployment manager)\n${ANTHROPIC_API_KEY:+export ANTHROPIC_API_KEY='$ANTHROPIC_API_KEY'}\n${N2YO_API_KEY:+export N2YO_API_KEY='$N2YO_API_KEY'}\n${DATALASTIC_API_KEY:+export DATALASTIC_API_KEY='$DATALASTIC_API_KEY'}\n${FLIGHTRADAR24_API_KEY:+export FLIGHTRADAR24_API_KEY='$FLIGHTRADAR24_API_KEY'}\n\nEOF\n    chown $KAMIWAZA_USER:$KAMIWAZA_USER \"$KAMIWAZA_ROOT/env.sh\"\n    log \"Environment file created at $KAMIWAZA_ROOT/env.sh\"\nelse\n    log \"Environment file already exists\"\nfi\n\n# Source the environment\nsource \"$KAMIWAZA_ROOT/env.sh\"\n\n# Step 9: Kamiwaza package installation complete\nlog \"Step 9: Kamiwaza installed from .deb package\"\ncd $KAMIWAZA_ROOT\nlog \"Kamiwaza installation completed\"\n\n# Step 10: Start Docker containers\nlog \"Step 10: Starting Kamiwaza containers...\"\ncd $KAMIWAZA_ROOT\n\n# Ensure containers-up.sh is executable\nchmod +x containers-up.sh\n\n# Start containers as kamiwaza user\nsu - $KAMIWAZA_USER -c \"cd $KAMIWAZA_ROOT && ./containers-up.sh\" 2>&1 | tee -a /var/log/kamiwaza-containers.log\n\nlog \"Kamiwaza containers started\"\n\n# Step 11: Wait for services to be ready\nlog \"Step 11: Waiting for services to become ready...\"\nsleep 30\n\n# Check if etcd is running\nif docker ps | grep -q kamiwaza-etcd; then\n    log \"✓ etcd is running\"\nelse\n    error \"✗ etcd is not running\"\nfi\n\n# Check if traefik is running\nif docker ps | grep -q kamiwaza-traefik; then\n    log \"✓ Traefik is running\"\nelse\n    error \"✗ Traefik is not running\"\nfi\n\n# Step 12: Start Kamiwaza application\nlog \"Step 12: Starting Kamiwaza application...\"\ncd $KAMIWAZA_ROOT\n\n# Create systemd service for Kamiwaza\ncat > /etc/systemd/system/kamiwaza.service <<EOF\n[Unit]\nDescription=Kamiwaza Platform\nAfter=docker.service\nRequires=docker.service\n\n[Service]\nType=simple\nUser=$KAMIWAZA_USER\nWorkingDirectory=$KAMIWAZA_ROOT\nEnvironment=\"KAMIWAZA_ROOT=$KAMIWAZA_ROOT\"\nExecStart=$KAMIWAZA_ROOT/launch.sh\nRestart=on-failure\nRestartSec=10s\nStandardOutput=append:/var/log/kamiwaza-application.log\nStandardError=append:/var/log/kamiwaza-application.log\n\n[Install]\nWantedBy=multi-user.target\nEOF\n\n# Reload systemd and enable service\nsystemctl daemon-reload\nsystemctl enable kamiwaza.service\nsystemctl start kamiwaza.service\n\nlog \"Kamiwaza application service created and started\"\n\n# Step 13: Display status and access information\nlog \"==========================================\"\nlog \"Kamiwaza Deployment Completed!\"\nlog \"==========================================\"\n\n# Get instance public IP\nPUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || echo \"unknown\")\nPRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4 || echo \"unknown\")\n\nlog \"Instance Information:\"\nlog \"  Public IP: $PUBLIC_IP\"\nlog \"  Private IP: $PRIVATE_IP\"\nlog \"\"\nlog \"Kamiwaza URLs:\"\nlog \"  HTTPS: https://$PUBLIC_IP\"\nlog \"  HTTP: http://$PUBLIC_IP (will redirect to HTTPS)\"\nlog \"\"\nlog \"Default Credentials:\"\nlog \"  Username: admin\"\nlog \"  Password: kamiwaza\"\nlog \"\"\nlog \"Service Status:\"\nsystemctl status kamiwaza.service --no-pager || true\nlog \"\"\nlog \"Docker Containers:\"\ndocker ps --format \"table {{.Names}}\\t{{.Status}}\\t{{.Ports}}\" | grep kamiwaza || true\nlog \"\"\nlog \"Logs:\"\nlog \"  Application: /var/log/kamiwaza-application.log\"\nlog \"  Deployment: /var/log/kamiwaza-deployment.log\"\nlog \"  Installation: /var/log/kamiwaza-install.log\"\nlog \"  Containers: /var/log/kamiwaza-containers.log\"\nlog \"\"\nlog \"To check application status:\"\nlog \"  systemctl status kamiwaza\"\nlog \"  docker ps\"\nlog \"  tail -f /var/log/kamiwaza-application.log\"\nlog \"\"\nlog \"==========================================\"\n\n# Create a README file for the user\ncat > /home/$KAMIWAZA_USER/README_KAMIWAZA.md <<EOF\n# Kamiwaza Platform - Deployment Information\n\n## Access Information\n\n- **Kamiwaza URL**: https://$PUBLIC_IP\n- **Username**: admin\n- **Password**: kamiwaza\n\n## Service Management\n\n### Start/Stop/Restart Kamiwaza\n\\`\\`\\`bash\nsudo systemctl start kamiwaza\nsudo systemctl stop kamiwaza\nsudo systemctl restart kamiwaza\nsudo systemctl status kamiwaza\n\\`\\`\\`\n\n### View Logs\n\\`\\`\\`bash\n# Application logs\nsudo tail -f /var/log/kamiwaza-application.log\n\n# All logs\nsudo journalctl -u kamiwaza -f\n\\`\\`\\`\n\n### Docker Container Management\n\\`\\`\\`bash\n# View running containers\ndocker ps\n\n# View all containers\ndocker ps -a\n\n# Restart containers\ncd $KAMIWAZA_ROOT\n./containers-up.sh\n\n# Stop containers\ncd $KAMIWAZA_ROOT\n./containers-down.sh\n\\`\\`\\`\n\n## Directory Structure\n\n- **Kamiwaza Root**: $KAMIWAZA_ROOT\n- **Environment Config**: $KAMIWAZA_ROOT/env.sh\n- **Logs**: /var/log/kamiwaza-*\n- **Data Volumes**: $DOCKER_VOLUME_DIRECTORY/volumes/\n\n## Troubleshooting\n\n### Check Service Status\n\\`\\`\\`bash\nsystemctl status kamiwaza\nsystemctl status docker\n\\`\\`\\`\n\n### Check Container Status\n\\`\\`\\`bash\ndocker ps | grep kamiwaza\ndocker logs default_kamiwaza-traefik\ndocker logs default_kamiwaza-etcd-$(hostname)\n\\`\\`\\`\n\n### Restart Everything\n\\`\\`\\`bash\ncd $KAMIWAZA_ROOT\nsudo systemctl stop kamiwaza\n./containers-down.sh\n./containers-up.sh\nsudo systemctl start kamiwaza\n\\`\\`\\`\n\n## Support\n\nFor issues and questions:\n- Documentation: https://code.kamiwaza.com/docs\n- Email: support@kamiwaza.ai\n\nEOF\n\nchown $KAMIWAZA_USER:$KAMIWAZA_USER /home/$KAMIWAZA_USER/README_KAMIWAZA.md\n\nlog \"Deployment script completed successfully!\"\nlog \"README created at /home/$KAMIWAZA_USER/README_KAMIWAZA.md\"\n\nexit 0\n"
+    }
+   },
+   "DependsOn": [
+    "InstanceRole3CCE2F1D"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/KamiwazaInstance/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/3VOy26DMBD8ltyNm5L2A2hURVxaC6pcq8XZJNvAGtnrIIT494rSBPXQ0zx2ZjWpTjfPer2CLiT2cElqqvRQCtiLgi58DmhTPexbq7ZH3putMrGqyZaxYpTJW1jhouAHVDUu/uJlIThLIOT4Hp7Ia24meAPZgWAHvTKeriC4PM5Z0DPeA/OSX5WJgD03yKJKtNGT9DvvYvuz4Y+RcxBgi/PLmY+KoNFD4ebRN7ydjXdHqnEcVYHBRT+VYxDXLPLI/5yMd1c6oH+BgCoLAaUUOBGfpo4BDw0K+km8R2mjjMr0cnb8sNGPT3q9+gpEiY8s1KAuZvwGwfSEjK0BAAA="
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-5/CDKMetadata/Default"
+   }
+  }
+ },
+ "Parameters": {
+  "SsmParameterValueawsserviceamiamazonlinuxlatestal2023amikernel61x8664C96584B6F00A464EAD1953AFF4B05118Parameter": {
+   "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+   "Default": "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64"
+  },
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Outputs": {
+  "InstanceId": {
+   "Description": "EC2 Instance ID",
+   "Value": {
+    "Ref": "KamiwazaInstance361554A9"
+   }
+  },
+  "PublicIP": {
+   "Description": "Public IP address",
+   "Value": {
+    "Fn::GetAtt": [
+     "KamiwazaInstance361554A9",
+     "PublicIp"
+    ]
+   }
+  },
+  "PrivateIP": {
+   "Description": "Private IP address",
+   "Value": {
+    "Fn::GetAtt": [
+     "KamiwazaInstance361554A9",
+     "PrivateIp"
+    ]
+   }
+  },
+  "SecurityGroupId": {
+   "Description": "Security Group ID",
+   "Value": {
+    "Fn::GetAtt": [
+     "KamiwazaSGFD941D5B",
+     "GroupId"
+    ]
+   }
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

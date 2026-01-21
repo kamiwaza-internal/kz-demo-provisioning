@@ -10,12 +10,12 @@
     "Tags": [
      {
       "Key": "Name",
-      "Value": "kamiwaza-job-8/KamiwazaVPC"
+      "Value": "kamiwaza-job-7/KamiwazaVPC"
      }
     ]
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/Resource"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/Resource"
    }
   },
   "KamiwazaVPCPublicSubnet1Subnet16CC561E": {
@@ -35,7 +35,7 @@
      },
      {
       "Key": "Name",
-      "Value": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet1"
+      "Value": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet1"
      }
     ],
     "VpcId": {
@@ -43,7 +43,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet1/Subnet"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet1/Subnet"
    }
   },
   "KamiwazaVPCPublicSubnet1RouteTable70CBF568": {
@@ -52,7 +52,7 @@
     "Tags": [
      {
       "Key": "Name",
-      "Value": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet1"
+      "Value": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet1"
      }
     ],
     "VpcId": {
@@ -60,7 +60,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet1/RouteTable"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet1/RouteTable"
    }
   },
   "KamiwazaVPCPublicSubnet1RouteTableAssociationB853504B": {
@@ -74,7 +74,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet1/RouteTableAssociation"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet1/RouteTableAssociation"
    }
   },
   "KamiwazaVPCPublicSubnet1DefaultRoute211374BB": {
@@ -92,7 +92,7 @@
     "KamiwazaVPCVPCGWC343B2BC"
    ],
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet1/DefaultRoute"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet1/DefaultRoute"
    }
   },
   "KamiwazaVPCPublicSubnet1EIPC397BDDA": {
@@ -102,12 +102,12 @@
     "Tags": [
      {
       "Key": "Name",
-      "Value": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet1"
+      "Value": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet1"
      }
     ]
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet1/EIP"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet1/EIP"
    }
   },
   "KamiwazaVPCPublicSubnet1NATGatewayEC5E1C3B": {
@@ -125,7 +125,7 @@
     "Tags": [
      {
       "Key": "Name",
-      "Value": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet1"
+      "Value": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet1"
      }
     ]
    },
@@ -134,7 +134,7 @@
     "KamiwazaVPCPublicSubnet1RouteTableAssociationB853504B"
    ],
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet1/NATGateway"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet1/NATGateway"
    }
   },
   "KamiwazaVPCPublicSubnet2Subnet59CC51FB": {
@@ -154,7 +154,7 @@
      },
      {
       "Key": "Name",
-      "Value": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet2"
+      "Value": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet2"
      }
     ],
     "VpcId": {
@@ -162,7 +162,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet2/Subnet"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet2/Subnet"
    }
   },
   "KamiwazaVPCPublicSubnet2RouteTable89EFDB9E": {
@@ -171,7 +171,7 @@
     "Tags": [
      {
       "Key": "Name",
-      "Value": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet2"
+      "Value": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet2"
      }
     ],
     "VpcId": {
@@ -179,7 +179,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet2/RouteTable"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet2/RouteTable"
    }
   },
   "KamiwazaVPCPublicSubnet2RouteTableAssociation5BCF936C": {
@@ -193,7 +193,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet2/RouteTableAssociation"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet2/RouteTableAssociation"
    }
   },
   "KamiwazaVPCPublicSubnet2DefaultRoute895FE943": {
@@ -211,7 +211,7 @@
     "KamiwazaVPCVPCGWC343B2BC"
    ],
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PublicSubnet2/DefaultRoute"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PublicSubnet2/DefaultRoute"
    }
   },
   "KamiwazaVPCPrivateSubnet1Subnet7F6BFC22": {
@@ -231,7 +231,7 @@
      },
      {
       "Key": "Name",
-      "Value": "kamiwaza-job-8/KamiwazaVPC/PrivateSubnet1"
+      "Value": "kamiwaza-job-7/KamiwazaVPC/PrivateSubnet1"
      }
     ],
     "VpcId": {
@@ -239,7 +239,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PrivateSubnet1/Subnet"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PrivateSubnet1/Subnet"
    }
   },
   "KamiwazaVPCPrivateSubnet1RouteTable7B1AC006": {
@@ -248,7 +248,7 @@
     "Tags": [
      {
       "Key": "Name",
-      "Value": "kamiwaza-job-8/KamiwazaVPC/PrivateSubnet1"
+      "Value": "kamiwaza-job-7/KamiwazaVPC/PrivateSubnet1"
      }
     ],
     "VpcId": {
@@ -256,7 +256,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PrivateSubnet1/RouteTable"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PrivateSubnet1/RouteTable"
    }
   },
   "KamiwazaVPCPrivateSubnet1RouteTableAssociation0678E6C3": {
@@ -270,7 +270,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PrivateSubnet1/RouteTableAssociation"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PrivateSubnet1/RouteTableAssociation"
    }
   },
   "KamiwazaVPCPrivateSubnet1DefaultRouteB08CBC8E": {
@@ -285,7 +285,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PrivateSubnet1/DefaultRoute"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PrivateSubnet1/DefaultRoute"
    }
   },
   "KamiwazaVPCPrivateSubnet2Subnet7E476F41": {
@@ -305,7 +305,7 @@
      },
      {
       "Key": "Name",
-      "Value": "kamiwaza-job-8/KamiwazaVPC/PrivateSubnet2"
+      "Value": "kamiwaza-job-7/KamiwazaVPC/PrivateSubnet2"
      }
     ],
     "VpcId": {
@@ -313,7 +313,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PrivateSubnet2/Subnet"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PrivateSubnet2/Subnet"
    }
   },
   "KamiwazaVPCPrivateSubnet2RouteTableA3410DC7": {
@@ -322,7 +322,7 @@
     "Tags": [
      {
       "Key": "Name",
-      "Value": "kamiwaza-job-8/KamiwazaVPC/PrivateSubnet2"
+      "Value": "kamiwaza-job-7/KamiwazaVPC/PrivateSubnet2"
      }
     ],
     "VpcId": {
@@ -330,7 +330,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PrivateSubnet2/RouteTable"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PrivateSubnet2/RouteTable"
    }
   },
   "KamiwazaVPCPrivateSubnet2RouteTableAssociation07C19ED8": {
@@ -344,7 +344,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PrivateSubnet2/RouteTableAssociation"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PrivateSubnet2/RouteTableAssociation"
    }
   },
   "KamiwazaVPCPrivateSubnet2DefaultRoute65B0BA55": {
@@ -359,7 +359,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/PrivateSubnet2/DefaultRoute"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/PrivateSubnet2/DefaultRoute"
    }
   },
   "KamiwazaVPCIGW1C2B07AA": {
@@ -368,12 +368,12 @@
     "Tags": [
      {
       "Key": "Name",
-      "Value": "kamiwaza-job-8/KamiwazaVPC"
+      "Value": "kamiwaza-job-7/KamiwazaVPC"
      }
     ]
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/IGW"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/IGW"
    }
   },
   "KamiwazaVPCVPCGWC343B2BC": {
@@ -387,7 +387,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/VPCGW"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/VPCGW"
    }
   },
   "KamiwazaVPCRestrictDefaultSecurityGroupCustomResourceC10022AE": {
@@ -410,7 +410,7 @@
    "UpdateReplacePolicy": "Delete",
    "DeletionPolicy": "Delete",
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaVPC/RestrictDefaultSecurityGroupCustomResource/Default"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaVPC/RestrictDefaultSecurityGroupCustomResource/Default"
    }
   },
   "CustomVpcRestrictDefaultSGCustomResourceProviderRole26592FE0": {
@@ -470,7 +470,7 @@
     ]
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/Custom::VpcRestrictDefaultSGCustomResourceProvider/Role"
+    "aws:cdk:path": "kamiwaza-job-7/Custom::VpcRestrictDefaultSGCustomResourceProvider/Role"
    }
   },
   "CustomVpcRestrictDefaultSGCustomResourceProviderHandlerDC833E5E": {
@@ -496,7 +496,7 @@
     "CustomVpcRestrictDefaultSGCustomResourceProviderRole26592FE0"
    ],
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/Custom::VpcRestrictDefaultSGCustomResourceProvider/Handler",
+    "aws:cdk:path": "kamiwaza-job-7/Custom::VpcRestrictDefaultSGCustomResourceProvider/Handler",
     "aws:asset:path": "asset.7fa1e366ee8a9ded01fc355f704cff92bfd179574e6f9cfee800a3541df1b200",
     "aws:asset:property": "Code"
    }
@@ -504,7 +504,7 @@
   "KamiwazaSGFD941D5B": {
    "Type": "AWS::EC2::SecurityGroup",
    "Properties": {
-    "GroupDescription": "Security group for Kamiwaza job 8",
+    "GroupDescription": "Security group for Kamiwaza job 7",
     "SecurityGroupEgress": [
      {
       "CidrIp": "0.0.0.0/0",
@@ -547,7 +547,7 @@
     }
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaSG/Resource"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaSG/Resource"
    }
   },
   "InstanceRole3CCE2F1D": {
@@ -565,7 +565,7 @@
      ],
      "Version": "2012-10-17"
     },
-    "Description": "IAM role for Kamiwaza EC2 instance (job 8)",
+    "Description": "IAM role for Kamiwaza EC2 instance (job 7)",
     "ManagedPolicyArns": [
      {
       "Fn::Join": [
@@ -582,7 +582,7 @@
     ]
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/InstanceRole/Resource"
+    "aws:cdk:path": "kamiwaza-job-7/InstanceRole/Resource"
    }
   },
   "KamiwazaInstanceInstanceProfileEFBAE96B": {
@@ -595,7 +595,7 @@
     ]
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaInstance/InstanceProfile"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaInstance/InstanceProfile"
    }
   },
   "KamiwazaInstance361554A9": {
@@ -608,7 +608,7 @@
       "Ebs": {
        "DeleteOnTermination": true,
        "Encrypted": true,
-       "VolumeSize": 80
+       "VolumeSize": 30
       }
      }
     ],
@@ -631,7 +631,7 @@
     "Tags": [
      {
       "Key": "JobId",
-      "Value": "8"
+      "Value": "7"
      },
      {
       "Key": "ManagedBy",
@@ -639,7 +639,7 @@
      },
      {
       "Key": "Name",
-      "Value": "test8"
+      "Value": "test7"
      }
     ],
     "UserData": {
@@ -650,7 +650,7 @@
     "InstanceRole3CCE2F1D"
    ],
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/KamiwazaInstance/Resource"
+    "aws:cdk:path": "kamiwaza-job-7/KamiwazaInstance/Resource"
    }
   },
   "CDKMetadata": {
@@ -659,7 +659,7 @@
     "Analytics": "v2:deflate64:H4sIAAAAAAAA/3VOQW6DMBB8S+7GTUn7ABpVEZfWgirXanE2yTawRvY6CCH+XlGaoB56mtmZ2dGkOt086/UKupDYwyWpqdJDKWAvCrrwOaBN9bBvrdoeeW+2ysSqJlvGilEmbWGFi4IfUNW46IuWheAsgZDje3gir7mZ4A1kB4Id9Mp4uoLgUpyzoGe8B+Ylv1cmAvbcIIsq0UZP0u+8i+3Phj9CzkGALc6VMx8VQaOHws2jb3izjXdHqnEcVYHBRT89xyCuWc4j/2MZ7650QP8CAVUWAkopcCI+TT/vUdooozK9nB0/bPTjk16vvgJR4iMLNaiLGb8BBherqaABAAA="
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-8/CDKMetadata/Default"
+    "aws:cdk:path": "kamiwaza-job-7/CDKMetadata/Default"
    }
   }
  },

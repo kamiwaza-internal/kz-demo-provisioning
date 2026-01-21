@@ -93,8 +93,11 @@ class KamiwazaEC2Stack(Stack):
                 self.region: ami_id
             })
         else:
-            # Use latest Amazon Linux 2023
-            machine_image = ec2.MachineImage.latest_amazon_linux2023()
+            # Use latest Ubuntu 24.04 LTS (required for Kamiwaza .deb package)
+            machine_image = ec2.MachineImage.lookup(
+                name="ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*",
+                owners=["099720109477"]  # Canonical
+            )
 
         # IAM role for EC2 instance
         role = iam.Role(
@@ -115,14 +118,14 @@ class KamiwazaEC2Stack(Stack):
             user_data_str = base64.b64decode(user_data_b64).decode('utf-8')
             user_data = ec2.UserData.custom(user_data_str)
         else:
+            # Default user data for Ubuntu (basic setup only)
             user_data = ec2.UserData.for_linux()
             user_data.add_commands(
                 "#!/bin/bash",
-                "yum update -y",
-                "yum install -y docker",
-                "systemctl start docker",
-                "systemctl enable docker",
-                "usermod -a -G docker ec2-user"
+                "export DEBIAN_FRONTEND=noninteractive",
+                "apt-get update -y",
+                "apt-get upgrade -y",
+                "# Additional setup should be provided via user_data_b64"
             )
 
         # EC2 Instance
@@ -142,9 +145,10 @@ class KamiwazaEC2Stack(Stack):
             key_name=key_pair_name,
             block_devices=[
                 ec2.BlockDevice(
-                    device_name="/dev/xvda",
+                    device_name="/dev/sda1",
                     volume=ec2.BlockDeviceVolume.ebs(
-                        volume_size=30,
+                        volume_size=80,
+                        volume_type=ec2.EbsDeviceVolumeType.GP3,
                         encrypted=True,
                         delete_on_termination=True
                     )
@@ -185,6 +189,12 @@ class KamiwazaEC2Stack(Stack):
             self, "SecurityGroupId",
             value=security_group.security_group_id,
             description="Security Group ID"
+        )
+
+        CfnOutput(
+            self, "VpcId",
+            value=vpc.vpc_id,
+            description="VPC ID (for reuse in future deployments)"
         )
 
 

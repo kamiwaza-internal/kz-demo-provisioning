@@ -141,6 +141,21 @@ def execute_cdk_provisioning(job: Job, db, log_message):
     # Step 2: Prepare instance configuration
     log_message("info", "Preparing instance configuration...")
 
+    # Auto-reuse VPC from most recent successful deployment if not specified
+    if not job.vpc_id:
+        recent_job = db.query(Job).filter(
+            Job.status == 'success',
+            Job.aws_region == job.aws_region,
+            Job.terraform_outputs.isnot(None)
+        ).order_by(Job.completed_at.desc()).first()
+
+        if recent_job and recent_job.terraform_outputs:
+            reused_vpc_id = recent_job.terraform_outputs.get('VpcId')
+            if reused_vpc_id:
+                job.vpc_id = reused_vpc_id
+                db.commit()
+                log_message("info", f"♻️  Reusing VPC from job #{recent_job.id}: {reused_vpc_id}")
+
     # Generate user data script
     user_data_script = generate_user_data_script(job, db)
     user_data_b64 = base64.b64encode(user_data_script.encode()).decode()
@@ -193,6 +208,12 @@ def execute_cdk_provisioning(job: Job, db, log_message):
 
         # Send success email
         send_completion_email(job, db)
+
+        # For Kamiwaza deployments, start readiness check
+        if job.deployment_type == "kamiwaza":
+            log_message("info", "Starting Kamiwaza readiness checks...")
+            # Schedule first check in 60 seconds to give Kamiwaza time to start
+            check_kamiwaza_readiness.apply_async(args=[job.id], countdown=60)
 
     else:
         raise Exception("CDK deployment failed - see logs for details")
@@ -334,6 +355,62 @@ def execute_terraform_provisioning(job: Job, db, log_message):
 def generate_user_data_script(job: Job, db) -> str:
     """Generate user_data script for EC2 instance"""
 
+    # Check deployment type
+    if job.deployment_type == "kamiwaza":
+        return generate_kamiwaza_user_data(job, db)
+    else:
+        return generate_docker_user_data(job, db)
+
+
+def generate_kamiwaza_user_data(job: Job, db) -> str:
+    """Generate user_data script for Kamiwaza full stack deployment"""
+
+    # Read the deployment script
+    script_path = Path(__file__).parent.parent / "scripts" / "deploy_kamiwaza_full.sh"
+    if not script_path.exists():
+        raise Exception(f"Kamiwaza deployment script not found at {script_path}")
+
+    deployment_script = script_path.read_text()
+
+    # Get package URL from settings
+    package_url = os.environ.get("KAMIWAZA_PACKAGE_URL", "https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb")
+
+    # Build user data with environment variables
+    user_data_lines = [
+        "#!/bin/bash",
+        "",
+        "# Kamiwaza Deployment Configuration",
+        f"export KAMIWAZA_PACKAGE_URL='{package_url}'",
+    ]
+
+    # Add API keys from settings (if configured)
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    n2yo_key = os.environ.get("N2YO_API_KEY", "")
+    datalastic_key = os.environ.get("DATALASTIC_API_KEY", "")
+    flightradar24_key = os.environ.get("FLIGHTRADAR24_API_KEY", "")
+
+    if anthropic_key:
+        user_data_lines.append(f"export ANTHROPIC_API_KEY='{anthropic_key}'")
+    if n2yo_key:
+        user_data_lines.append(f"export N2YO_API_KEY='{n2yo_key}'")
+    if datalastic_key:
+        user_data_lines.append(f"export DATALASTIC_API_KEY='{datalastic_key}'")
+    if flightradar24_key:
+        user_data_lines.append(f"export FLIGHTRADAR24_API_KEY='{flightradar24_key}'")
+
+    user_data_lines.extend([
+        "export KAMIWAZA_ROOT='/opt/kamiwaza'",
+        "export KAMIWAZA_USER='ubuntu'",
+        "",
+        deployment_script
+    ])
+
+    return "\n".join(user_data_lines)
+
+
+def generate_docker_user_data(job: Job, db) -> str:
+    """Generate user_data script for custom Docker deployments"""
+
     # Prepare users CSV content
     users_csv_content = ""
     if job.users_data:
@@ -449,6 +526,7 @@ def send_completion_email(job: Job, db):
         job_name=job.job_name,
         job_id=job.id,
         status=job.status,
+        deployment_type=job.deployment_type or "docker",
         instance_id=job.instance_id,
         public_ip=job.public_ip,
         private_ip=job.private_ip,
@@ -561,6 +639,128 @@ def execute_kamiwaza_provisioning(self, job_id: int):
         db.commit()
 
         log_message("error", f"✗ Provisioning error: {str(e)}")
+
+    finally:
+        db.close()
+
+
+# ============================================================================
+# KAMIWAZA READINESS CHECK TASK
+# ============================================================================
+
+@celery_app.task(bind=True, name='worker.tasks.check_kamiwaza_readiness')
+def check_kamiwaza_readiness(self, job_id: int):
+    """
+    Check if Kamiwaza login page is accessible on the deployed EC2 instance.
+    This task is called periodically after a successful deployment.
+    """
+    import ssl
+    import urllib.request
+    import urllib.error
+
+    db = SessionLocal()
+
+    try:
+        # Get job from database
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            logger.error(f"Job {job_id} not found for readiness check")
+            return
+
+        # Only check Kamiwaza deployments
+        if job.deployment_type != "kamiwaza":
+            logger.info(f"Job {job_id} is not a Kamiwaza deployment, skipping check")
+            return
+
+        # Only check if not already ready
+        if job.kamiwaza_ready:
+            logger.info(f"Job {job_id} Kamiwaza already marked as ready")
+            return
+
+        # Check if we have a public IP
+        if not job.public_ip:
+            logger.warning(f"Job {job_id} has no public IP, cannot check readiness")
+            return
+
+        # Update check attempt
+        job.kamiwaza_check_attempts = (job.kamiwaza_check_attempts or 0) + 1
+        job.kamiwaza_checked_at = datetime.utcnow()
+        db.commit()
+
+        logger.info(f"Checking Kamiwaza readiness for job {job_id} (attempt {job.kamiwaza_check_attempts})")
+
+        # Try to access the login page
+        url = f"https://{job.public_ip}"
+
+        # Create SSL context that doesn't verify certificates (self-signed cert)
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
+        try:
+            request = urllib.request.Request(url, headers={'User-Agent': 'Kamiwaza-Deployment-Manager'})
+            with urllib.request.urlopen(request, context=ssl_context, timeout=10) as response:
+                status_code = response.getcode()
+                content = response.read().decode('utf-8', errors='ignore')
+
+                # Check if we got a successful response
+                if status_code == 200:
+                    # Verify it's actually the Kamiwaza login page
+                    if 'kamiwaza' in content.lower() or 'login' in content.lower():
+                        logger.info(f"✓ Kamiwaza login page is accessible for job {job_id}")
+                        job.kamiwaza_ready = True
+                        db.commit()
+
+                        # Log success message
+                        log = JobLog(
+                            job_id=job.id,
+                            level="info",
+                            message=f"✓ Kamiwaza login page is now accessible at https://{job.public_ip}",
+                            source="readiness-check"
+                        )
+                        db.add(log)
+                        db.commit()
+                        return
+                    else:
+                        logger.info(f"Got 200 but content doesn't look like Kamiwaza for job {job_id}")
+                else:
+                    logger.info(f"Got status {status_code} for job {job_id}")
+
+        except urllib.error.HTTPError as e:
+            logger.info(f"HTTP {e.code} when checking job {job_id}")
+        except urllib.error.URLError as e:
+            logger.info(f"Connection failed for job {job_id}: {e.reason}")
+        except Exception as e:
+            logger.info(f"Error checking job {job_id}: {type(e).__name__}: {str(e)}")
+
+        # Log check attempt
+        log = JobLog(
+            job_id=job.id,
+            level="info",
+            message=f"Kamiwaza readiness check #{job.kamiwaza_check_attempts}: Not yet accessible (still deploying...)",
+            source="readiness-check"
+        )
+        db.add(log)
+        db.commit()
+
+        # Schedule another check if we haven't exceeded max attempts (60 attempts = 30 minutes)
+        MAX_ATTEMPTS = 60
+        if job.kamiwaza_check_attempts < MAX_ATTEMPTS:
+            # Schedule another check in 30 seconds
+            check_kamiwaza_readiness.apply_async(args=[job_id], countdown=30)
+        else:
+            logger.warning(f"Max readiness check attempts reached for job {job_id}")
+            log = JobLog(
+                job_id=job.id,
+                level="warning",
+                message=f"⚠ Kamiwaza readiness checks timed out after {MAX_ATTEMPTS} attempts. The deployment may still be in progress. Check https://{job.public_ip} manually.",
+                source="readiness-check"
+            )
+            db.add(log)
+            db.commit()
+
+    except Exception as e:
+        logger.error(f"Error in readiness check for job {job_id}: {str(e)}", exc_info=True)
 
     finally:
         db.close()

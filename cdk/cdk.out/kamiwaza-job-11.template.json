@@ -604,21 +604,20 @@
     "AvailabilityZone": "us-east-1a",
     "BlockDeviceMappings": [
      {
-      "DeviceName": "/dev/xvda",
+      "DeviceName": "/dev/sda1",
       "Ebs": {
        "DeleteOnTermination": true,
        "Encrypted": true,
-       "VolumeSize": 30
+       "VolumeSize": 80,
+       "VolumeType": "gp3"
       }
      }
     ],
     "IamInstanceProfile": {
      "Ref": "KamiwazaInstanceInstanceProfileEFBAE96B"
     },
-    "ImageId": {
-     "Ref": "SsmParameterValueawsserviceamiamazonlinuxlatestal2023amikernel61x8664C96584B6F00A464EAD1953AFF4B05118Parameter"
-    },
-    "InstanceType": "t3.micro",
+    "ImageId": "ami-0b6c6ebed2801a5cb",
+    "InstanceType": "t3.xlarge",
     "SecurityGroupIds": [
      {
       "Fn::GetAtt": [
@@ -641,11 +640,11 @@
      },
      {
       "Key": "Name",
-      "Value": "test"
+      "Value": "test11"
      }
     ],
     "UserData": {
-     "Fn::Base64": "#!/bin/bash\nset -e\n\n# Update and install Docker\nyum update -y\nyum install -y docker\nsystemctl start docker\nsystemctl enable docker\n\n# Install docker-compose\ncurl -L https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/bin/docker-compose\nchmod +x /usr/local/bin/docker-compose\n\n# Create app directory\nmkdir -p /opt/app\n\n# Write docker-compose.yml\ncat > /opt/app/docker-compose.yml << 'EOF'\n{\n  \"version\": \"3.8\",\n  \"services\": {\n    \"webapp\": {\n      \"image\": \"nginx:latest\",\n      \"container_name\": \"webapp\",\n      \"restart\": \"unless-stopped\",\n      \"ports\": [\n        \"80:80\"\n      ]\n    }\n  }\n}\nEOF\n\n# Start containers\ncd /opt/app\ndocker-compose up -d\n\n# Log completion\necho 'Provisioning complete' > /opt/app/provisioning.log"
+     "Fn::Base64": "#!/bin/bash\n\n# Kamiwaza Deployment Configuration\nexport KAMIWAZA_PACKAGE_URL='https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb'\nexport KAMIWAZA_ROOT='/opt/kamiwaza'\nexport KAMIWAZA_USER='ubuntu'\n\n#!/bin/bash\n#\n# Kamiwaza Official Installation Script for EC2\n# This script follows the official Kamiwaza .deb installation instructions\n#\n# Usage: Run as root on EC2 instance startup (via user data)\n# OS: Ubuntu 22.04 or 24.04 LTS ONLY\n# Reference: https://docs.kamiwaza.ai/installation/linux_macos_tarball\n#\n\nset -euo pipefail\n\n# Ensure non-interactive mode for all apt/dpkg operations\nexport DEBIAN_FRONTEND=noninteractive\n\n# Logging functions\nlog() {\n    echo \"[$(date +'%Y-%m-%d %H:%M:%S')] $*\" | tee -a /var/log/kamiwaza-deployment.log\n}\n\nerror() {\n    echo \"[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $*\" | tee -a /var/log/kamiwaza-deployment.log >&2\n}\n\n# Configuration - can be overridden via environment variables\nKAMIWAZA_PACKAGE_URL=\"${KAMIWAZA_PACKAGE_URL:-https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb}\"\nKAMIWAZA_USER=\"${KAMIWAZA_USER:-ubuntu}\"\n\n# Start deployment\nlog \"==========================================\"\nlog \"Kamiwaza Official Installation Starting\"\nlog \"==========================================\"\nlog \"Package URL: $KAMIWAZA_PACKAGE_URL\"\nlog \"User: $KAMIWAZA_USER\"\n\n# Detect OS\nif [ -f /etc/os-release ]; then\n    . /etc/os-release\n    OS=$ID\n    VER=$VERSION_ID\n    log \"Detected OS: $OS $VER\"\nelse\n    error \"Cannot detect OS\"\n    exit 1\nfi\n\n# Validate Ubuntu\nif [ \"$OS\" != \"ubuntu\" ]; then\n    error \"This script only supports Ubuntu 22.04 or 24.04 LTS\"\n    error \"Detected OS: $OS $VER\"\n    error \"For other operating systems, please use the tarball installation method\"\n    exit 1\nfi\n\nif [ \"$VER\" != \"22.04\" ] && [ \"$VER\" != \"24.04\" ]; then\n    error \"This script only supports Ubuntu 22.04 or 24.04 LTS\"\n    error \"Detected version: $VER\"\n    exit 1\nfi\n\nlog \"✓ OS validation passed: Ubuntu $VER\"\n\n# Detect architecture\nARCH=$(uname -m)\nlog \"Architecture: $ARCH\"\n\n# Step 1: Update system packages (per official instructions)\nlog \"Step 1: Running 'sudo apt update'...\"\napt-get update -y\nlog \"✓ System packages updated\"\n\n# Step 2: Download Kamiwaza .deb package (per official instructions)\nlog \"Step 2: Downloading Kamiwaza package...\"\nPACKAGE_FILENAME=$(basename \"$KAMIWAZA_PACKAGE_URL\")\nwget \"$KAMIWAZA_PACKAGE_URL\" -P /tmp\n\nif [ $? -ne 0 ]; then\n    error \"Failed to download Kamiwaza package from $KAMIWAZA_PACKAGE_URL\"\n    exit 1\nfi\nlog \"✓ Package downloaded to /tmp/$PACKAGE_FILENAME\"\n\n# Step 3: Install Kamiwaza package (per official instructions)\nlog \"Step 3: Installing Kamiwaza with 'sudo apt install -f -y /tmp/$PACKAGE_FILENAME'...\"\napt install -f -y \"/tmp/$PACKAGE_FILENAME\"\n\nif [ $? -ne 0 ]; then\n    error \"Failed to install Kamiwaza package\"\n    exit 1\nfi\nlog \"✓ Kamiwaza package installed successfully\"\n\n# Clean up temp file\nrm -f \"/tmp/$PACKAGE_FILENAME\"\nlog \"✓ Cleaned up temporary package file\"\n\n# Step 4: Start Kamiwaza (per official instructions)\nlog \"Step 4: Starting Kamiwaza with 'kamiwaza start'...\"\n\n# Check if kamiwaza command exists\nif ! command -v kamiwaza &> /dev/null; then\n    error \"kamiwaza command not found after installation\"\n    error \"The .deb package may not have installed correctly\"\n    exit 1\nfi\n\nlog \"✓ kamiwaza command found\"\n\n# Run kamiwaza start as the specified user with full mode configuration\nlog \"Running 'kamiwaza start' in FULL mode as user $KAMIWAZA_USER...\"\n\n# Set environment variables for full mode deployment\n# KAMIWAZA_LITE=false ensures we get the full stack (not lite mode)\nsu - $KAMIWAZA_USER -c \"export KAMIWAZA_LITE=false && kamiwaza start\" 2>&1 | tee -a /var/log/kamiwaza-startup.log &\nKAMIWAZA_PID=$!\n\nlog \"✓ Kamiwaza start command initiated (PID: $KAMIWAZA_PID)\"\n\n# Wait a moment for services to initialize\nlog \"Waiting for Kamiwaza to initialize...\"\nsleep 30\n\n# Step 5: Verify deployment\nlog \"Step 5: Verifying deployment...\"\n\n# Get instance public IP\nPUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || echo \"unknown\")\nPRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4 || echo \"unknown\")\n\n# Check if Docker containers are running (Kamiwaza uses Docker internally)\nif docker ps &> /dev/null; then\n    CONTAINER_COUNT=$(docker ps | grep -c kamiwaza || true)\n    log \"✓ Docker accessible, found $CONTAINER_COUNT Kamiwaza containers\"\nfi\n\n# Display completion information\nlog \"==========================================\"\nlog \"Kamiwaza Installation Completed!\"\nlog \"==========================================\"\nlog \"\"\nlog \"Deployment Mode: FULL (KAMIWAZA_LITE=false)\"\nlog \"\"\nlog \"Instance Information:\"\nlog \"  Public IP: $PUBLIC_IP\"\nlog \"  Private IP: $PRIVATE_IP\"\nlog \"\"\nlog \"Kamiwaza URLs:\"\nlog \"  HTTPS: https://$PUBLIC_IP\"\nlog \"  HTTP: http://$PUBLIC_IP (may redirect to HTTPS)\"\nlog \"\"\nlog \"Default Credentials:\"\nlog \"  Username: admin\"\nlog \"  Password: kamiwaza\"\nlog \"\"\nlog \"⏳ Note: Full mode may take 10-20 minutes to fully start\"\nlog \"   (includes all services: auth, vector DB, observability, etc.)\"\nlog \"   Monitor progress with: sudo tail -f /var/log/kamiwaza-startup.log\"\nlog \"\"\nlog \"Management Commands:\"\nlog \"  Start:   kamiwaza start\"\nlog \"  Stop:    sudo systemctl stop kamiwaza (or kamiwaza stop if available)\"\nlog \"  Status:  docker ps | grep kamiwaza\"\nlog \"\"\nlog \"To remove Kamiwaza:\"\nlog \"  sudo apt remove --purge kamiwaza\"\nlog \"\"\nlog \"==========================================\"\n\n# Create a README file for the user\ncat > /home/$KAMIWAZA_USER/README_KAMIWAZA.md <<EOF\n# Kamiwaza Platform - Deployment Information\n\n## Access Information\n\n- **Kamiwaza URL**: https://$PUBLIC_IP\n- **Username**: admin\n- **Password**: kamiwaza\n\n⏳ **Note**: Kamiwaza may take 5-15 minutes after deployment to be fully accessible.\n\n## Service Management\n\n### Start Kamiwaza\n\\`\\`\\`bash\nkamiwaza start\n\\`\\`\\`\n\n### Stop Kamiwaza\n\\`\\`\\`bash\n# Method will depend on how kamiwaza was started\n# Check for available commands:\nkamiwaza --help\n\n# Or stop via systemctl if a service was created:\nsudo systemctl stop kamiwaza\n\\`\\`\\`\n\n### Check Status\n\\`\\`\\`bash\n# Check running containers\ndocker ps | grep kamiwaza\n\n# Check logs\nsudo tail -f /var/log/kamiwaza-startup.log\n\\`\\`\\`\n\n## Removal\n\n### Complete Uninstall\n\\`\\`\\`bash\nsudo apt remove --purge kamiwaza\n\\`\\`\\`\n\n## Troubleshooting\n\n### Check Docker Containers\n\\`\\`\\`bash\ndocker ps -a | grep kamiwaza\n\\`\\`\\`\n\n### View Startup Logs\n\\`\\`\\`bash\nsudo tail -f /var/log/kamiwaza-startup.log\n\\`\\`\\`\n\n### Restart Kamiwaza\n\\`\\`\\`bash\n# Stop any running instances first, then:\nkamiwaza start\n\\`\\`\\`\n\n## Installation Details\n\nThis deployment used the official Kamiwaza .deb package installation method:\n\n1. \\`sudo apt update\\`\n2. \\`wget $KAMIWAZA_PACKAGE_URL -P /tmp\\`\n3. \\`sudo apt install -f -y /tmp/$(basename $KAMIWAZA_PACKAGE_URL)\\`\n4. \\`kamiwaza start\\`\n\n## Support\n\nFor issues and questions:\n- Documentation: https://docs.kamiwaza.ai\n- Email: support@kamiwaza.ai\n\nEOF\n\nchown $KAMIWAZA_USER:$KAMIWAZA_USER /home/$KAMIWAZA_USER/README_KAMIWAZA.md\n\nlog \"✓ README created at /home/$KAMIWAZA_USER/README_KAMIWAZA.md\"\nlog \"\"\nlog \"Deployment script completed successfully!\"\nlog \"Monitor Kamiwaza startup: sudo tail -f /var/log/kamiwaza-startup.log\"\n\nexit 0\n"
     }
    },
    "DependsOn": [
@@ -658,22 +657,11 @@
   "CDKMetadata": {
    "Type": "AWS::CDK::Metadata",
    "Properties": {
-    "Analytics": "v2:deflate64:H4sIAAAAAAAA/3VOy26DMBD8ltyNm5L2A2hURVxaC6pcq8XZJNvAGtnrIIT494rSBPXQ0zx2ZjWpTjfPer2CLiT2cElqqvRQCtiLgi58DmhTPexbq7ZH3putMrGqyZaxYpTJW1jhouAHVDUu/uJlIThLIOT4Hp7Ia24meAPZgWAHvTKeriC4PM5Z0DPeA/OSX5WJgD03yKJKtNGT9DvvYvuz4Y+RcxBgi/PLmY+KoNFD4ebRN7ydjXdHqnEcVYHBRT+VYxDXLPLI/5yMd1c6oH+BgCoLAaUUOBGfpo4BDw0K+km8R2mjjMr0cnb8sNGPT3q9+gpEiY8s1KAuZvwGwfSEjK0BAAA="
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/3VOQW6DMBB8S+7GTUn7ABpVEZfWgirXanE2yTawRvY6CCH+XlGaoB56mtmZ2dGkOt086/UKupDYwyWpqdJDKWAvCrrwOaBN9bBvrdoeeW+2ysSqJlvGilEmbWGFi4IfUNW46IuWheAsgZDje3gir7mZ4A1kB4Id9Mp4uoLgUpyzoGe8B+Ylv1cmAvbcIIsq0UZP0u+8i+3Phj9CzkGALc6VMx8VQaOHws2jb3izjXdHqnEcVYHBRT89xyCuWc4j/2MZ7650QP8CAVUWAkopcCI+TT/vUdooozK9nB0/bPTjk16vvgJR4iMLNaiLGb8BBherqaABAAA="
    },
    "Metadata": {
     "aws:cdk:path": "kamiwaza-job-11/CDKMetadata/Default"
    }
-  }
- },
- "Parameters": {
-  "SsmParameterValueawsserviceamiamazonlinuxlatestal2023amikernel61x8664C96584B6F00A464EAD1953AFF4B05118Parameter": {
-   "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
-   "Default": "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64"
-  },
-  "BootstrapVersion": {
-   "Type": "AWS::SSM::Parameter::Value<String>",
-   "Default": "/cdk-bootstrap/hnb659fds/version",
-   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
   }
  },
  "Outputs": {
@@ -709,6 +697,19 @@
      "GroupId"
     ]
    }
+  },
+  "VpcId": {
+   "Description": "VPC ID (for reuse in future deployments)",
+   "Value": {
+    "Ref": "KamiwazaVPCB2EC84F0"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
   }
  },
  "Rules": {

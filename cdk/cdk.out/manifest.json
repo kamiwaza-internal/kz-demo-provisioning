@@ -18,7 +18,7 @@
         "validateOnSynth": false,
         "assumeRoleArn": "arn:${AWS::Partition}:iam::916994818137:role/cdk-hnb659fds-deploy-role-916994818137-us-east-1",
         "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::916994818137:role/cdk-hnb659fds-cfn-exec-role-916994818137-us-east-1",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-916994818137-us-east-1/c1d2b733f1a100d9a774b22237763b0abcc2953d61680b85667ffb5f76ee402b.json",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-916994818137-us-east-1/7570ffd23091a160f2bef12e29bc1ece5caca3eda1c1a59ecda732b9aac13b5b.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
         "additionalDependencies": [
@@ -208,12 +208,6 @@
             "data": "KamiwazaInstance361554A9"
           }
         ],
-        "/kamiwaza-job-11/SsmParameterValue:--aws--service--ami-amazon-linux-latest--al2023-ami-kernel-6.1-x86_64:C96584B6-F00A-464E-AD19-53AFF4B05118.Parameter": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "SsmParameterValueawsserviceamiamazonlinuxlatestal2023amikernel61x8664C96584B6F00A464EAD1953AFF4B05118Parameter"
-          }
-        ],
         "/kamiwaza-job-11/InstanceId": [
           {
             "type": "aws:cdk:logicalId",
@@ -236,6 +230,12 @@
           {
             "type": "aws:cdk:logicalId",
             "data": "SecurityGroupId"
+          }
+        ],
+        "/kamiwaza-job-11/VpcId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VpcId"
           }
         ],
         "/kamiwaza-job-11/CDKMetadata/Default": [

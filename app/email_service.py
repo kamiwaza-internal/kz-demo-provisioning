@@ -18,6 +18,7 @@ class EmailService:
         job_name: str,
         job_id: int,
         status: str,
+        deployment_type: str = "docker",
         instance_id: Optional[str] = None,
         public_ip: Optional[str] = None,
         private_ip: Optional[str] = None,
@@ -46,6 +47,29 @@ class EmailService:
         ]
 
         if status == "success":
+            # Add Kamiwaza-specific access info
+            if deployment_type == "kamiwaza" and public_ip:
+                body_lines.extend([
+                    "=" * 60,
+                    "KAMIWAZA DEPLOYMENT SUCCESSFUL",
+                    "=" * 60,
+                    "",
+                    "Access your Kamiwaza instance at:",
+                    f"  https://{public_ip}",
+                    "",
+                    "Default Credentials:",
+                    "  Username: admin",
+                    "  Password: kamiwaza",
+                    "",
+                    "⚠️  IMPORTANT: Change these credentials after your first login!",
+                    "",
+                    "Note: If Kamiwaza is not accessible yet, the deployment may",
+                    "still be finalizing on the EC2 instance (10-15 more minutes).",
+                    "",
+                    "=" * 60,
+                    ""
+                ])
+
             body_lines.extend([
                 "EC2 Instance Details:",
                 f"  Instance ID: {instance_id}",
@@ -63,7 +87,7 @@ class EmailService:
 
             body_lines.append("")
 
-            if exposed_ports:
+            if exposed_ports and deployment_type != "kamiwaza":
                 body_lines.extend([
                     "Exposed Services:",
                     *[f"  - Port {port}" for port in exposed_ports],

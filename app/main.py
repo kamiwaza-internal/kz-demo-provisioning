@@ -83,6 +83,9 @@ async def create_job(
     request: Request,
     csrf_token: str = Form(...),
     job_name: str = Form(...),
+    deployment_type: str = Form("docker"),
+    kamiwaza_branch: Optional[str] = Form("release/0.9.2"),
+    kamiwaza_github_token: Optional[str] = Form(None),
     aws_region: str = Form(...),
     vpc_id: Optional[str] = Form(None),
     subnet_id: Optional[str] = Form(None),
@@ -92,7 +95,7 @@ async def create_job(
     volume_size_gb: int = Form(30),
     ami_id: Optional[str] = Form(None),
     tags: Optional[str] = Form(None),
-    dockerhub_images: str = Form(...),
+    dockerhub_images: Optional[str] = Form(None),
     requester_email: str = Form(...),
     csv_file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
@@ -104,12 +107,19 @@ async def create_job(
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
     try:
-        # Parse JSON fields
-        try:
-            dockerhub_images_list = json.loads(dockerhub_images)
-            containers = [ContainerConfig(**c) for c in dockerhub_images_list]
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid dockerhub_images format: {str(e)}")
+        # Parse Docker containers (only required for docker deployment type)
+        containers = []
+        if deployment_type == "docker":
+            if not dockerhub_images:
+                raise HTTPException(status_code=400, detail="dockerhub_images is required for docker deployment type")
+            try:
+                dockerhub_images_list = json.loads(dockerhub_images)
+                containers = [ContainerConfig(**c) for c in dockerhub_images_list]
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Invalid dockerhub_images format: {str(e)}")
+        elif deployment_type == "kamiwaza":
+            # For Kamiwaza, docker images are not required (will be auto-configured)
+            containers = []
 
         # Parse tags
         tags_dict = {}
@@ -128,15 +138,18 @@ async def create_job(
         if security_group_ids:
             sg_ids = [sg.strip() for sg in security_group_ids.split(",") if sg.strip()]
 
-        # AWS auth settings from environment (configured in Settings page)
-        aws_auth_method = os.environ.get("AWS_AUTH_METHOD", "assume_role")
-        assume_role_arn = os.environ.get("AWS_ASSUME_ROLE_ARN", "")
-        external_id = os.environ.get("AWS_EXTERNAL_ID", "")
-        session_name = os.environ.get("AWS_SESSION_NAME", "kamiwaza-provisioner")
+        # AWS auth settings from config (configured in Settings page or .env)
+        aws_auth_method = settings.aws_auth_method
+        assume_role_arn = settings.aws_assume_role_arn
+        external_id = settings.aws_external_id
+        session_name = settings.aws_session_name
 
         # Create job data
         job_data = JobCreate(
             job_name=job_name,
+            deployment_type=deployment_type,
+            kamiwaza_branch=kamiwaza_branch,
+            kamiwaza_github_token=kamiwaza_github_token,
             aws_region=aws_region,
             aws_auth_method=aws_auth_method,
             assume_role_arn=assume_role_arn,
@@ -160,6 +173,9 @@ async def create_job(
         job = Job(
             job_name=job_data.job_name,
             status="pending",
+            deployment_type=job_data.deployment_type,
+            kamiwaza_branch=job_data.kamiwaza_branch,
+            kamiwaza_github_token=job_data.kamiwaza_github_token,
             aws_region=job_data.aws_region,
             aws_auth_method=job_data.aws_auth_method,
             assume_role_arn=job_data.assume_role_arn,
@@ -173,7 +189,7 @@ async def create_job(
             volume_size_gb=job_data.volume_size_gb,
             ami_id=job_data.ami_id,
             tags=job_data.tags,
-            dockerhub_images=[c.model_dump() for c in job_data.dockerhub_images],
+            dockerhub_images=[c.model_dump() for c in job_data.dockerhub_images] if job_data.dockerhub_images else [],
             requester_email=job_data.requester_email
         )
 
@@ -574,28 +590,28 @@ async def settings_page(
     """Display configuration settings page"""
     csrf_token = csrf_protection.generate_token()
 
-    # Read current configuration from environment
+    # Read current configuration from settings
     config = {
-        "KAMIWAZA_URL": os.environ.get("KAMIWAZA_URL", "https://localhost"),
-        "KAMIWAZA_USERNAME": os.environ.get("KAMIWAZA_USERNAME", "admin"),
-        "KAMIWAZA_PASSWORD": os.environ.get("KAMIWAZA_PASSWORD", "kamiwaza"),
-        "KAMIWAZA_DB_PATH": os.environ.get("KAMIWAZA_DB_PATH", "/opt/kamiwaza/db-lite/kamiwaza.db"),
-        "KAMIWAZA_PROVISION_SCRIPT": os.environ.get("KAMIWAZA_PROVISION_SCRIPT", "/Users/steffenmerten/Code/kamiwaza/scripts/provision_users.py"),
-        "KAIZEN_SOURCE": os.environ.get("KAIZEN_SOURCE", "/Users/steffenmerten/Code/kaizen-v3/apps/kaizenv3"),
-        "DEFAULT_USER_PASSWORD": os.environ.get("DEFAULT_USER_PASSWORD", "kamiwaza"),
-        "AWS_AUTH_METHOD": os.environ.get("AWS_AUTH_METHOD", "assume_role"),
-        "AWS_ASSUME_ROLE_ARN": os.environ.get("AWS_ASSUME_ROLE_ARN", ""),
-        "AWS_EXTERNAL_ID": os.environ.get("AWS_EXTERNAL_ID", ""),
-        "AWS_SESSION_NAME": os.environ.get("AWS_SESSION_NAME", "kamiwaza-provisioner"),
-        "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID", ""),
-        "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
-        "AWS_SSO_PROFILE": os.environ.get("AWS_SSO_PROFILE", ""),
-        "AWS_REGION": os.environ.get("AWS_REGION", "us-west-2"),
-        "AWS_PROVISIONING_METHOD": os.environ.get("AWS_PROVISIONING_METHOD", "cdk"),
-        "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY", ""),
-        "N2YO_API_KEY": os.environ.get("N2YO_API_KEY", ""),
-        "DATALASTIC_API_KEY": os.environ.get("DATALASTIC_API_KEY", ""),
-        "FLIGHTRADAR24_API_KEY": os.environ.get("FLIGHTRADAR24_API_KEY", ""),
+        "KAMIWAZA_URL": settings.kamiwaza_url,
+        "KAMIWAZA_USERNAME": settings.kamiwaza_username,
+        "KAMIWAZA_PASSWORD": settings.kamiwaza_password,
+        "KAMIWAZA_DB_PATH": settings.kamiwaza_db_path,
+        "KAMIWAZA_PACKAGE_URL": settings.kamiwaza_package_url,
+        "KAMIWAZA_PROVISION_SCRIPT": settings.kamiwaza_provision_script,
+        "KAIZEN_SOURCE": settings.kaizen_source,
+        "DEFAULT_USER_PASSWORD": settings.default_user_password,
+        "AWS_AUTH_METHOD": settings.aws_auth_method,
+        "AWS_ASSUME_ROLE_ARN": settings.aws_assume_role_arn,
+        "AWS_EXTERNAL_ID": settings.aws_external_id,
+        "AWS_SESSION_NAME": settings.aws_session_name,
+        "AWS_ACCESS_KEY_ID": settings.aws_access_key_id,
+        "AWS_SECRET_ACCESS_KEY": settings.aws_secret_access_key,
+        "AWS_SSO_PROFILE": settings.aws_sso_profile,
+        "AWS_PROVISIONING_METHOD": settings.aws_provisioning_method,
+        "ANTHROPIC_API_KEY": settings.anthropic_api_key,
+        "N2YO_API_KEY": settings.n2yo_api_key,
+        "DATALASTIC_API_KEY": settings.datalastic_api_key,
+        "FLIGHTRADAR24_API_KEY": settings.flightradar24_api_key,
     }
 
     # Check if base AWS credentials are available
@@ -620,6 +636,7 @@ async def save_settings(
     kamiwaza_username: str = Form(...),
     kamiwaza_password: str = Form(...),
     kamiwaza_db_path: str = Form(""),
+    kamiwaza_package_url: str = Form(...),
     provision_script: str = Form(...),
     kaizen_source: str = Form(...),
     default_user_password: str = Form(...),
@@ -630,7 +647,6 @@ async def save_settings(
     aws_access_key_id: str = Form(""),
     aws_secret_access_key: str = Form(""),
     aws_sso_profile: str = Form(""),
-    aws_region: str = Form("us-west-2"),
     aws_provisioning_method: str = Form("cdk"),
     anthropic_api_key: str = Form(""),
     n2yo_api_key: str = Form(""),
@@ -654,6 +670,9 @@ KAMIWAZA_USERNAME={kamiwaza_username}
 KAMIWAZA_PASSWORD={kamiwaza_password}
 KAMIWAZA_DB_PATH={kamiwaza_db_path}
 
+# Kamiwaza Package
+KAMIWAZA_PACKAGE_URL={kamiwaza_package_url}
+
 # Script Paths
 KAMIWAZA_PROVISION_SCRIPT={provision_script}
 KAIZEN_SOURCE={kaizen_source}
@@ -662,6 +681,7 @@ KAIZEN_SOURCE={kaizen_source}
 DEFAULT_USER_PASSWORD={default_user_password}
 
 # AWS Authentication
+# Note: AWS Region is specified per-job, not here
 AWS_AUTH_METHOD={aws_auth_method}
 AWS_ASSUME_ROLE_ARN={aws_assume_role_arn}
 AWS_EXTERNAL_ID={aws_external_id}
@@ -669,7 +689,6 @@ AWS_SESSION_NAME={aws_session_name}
 AWS_ACCESS_KEY_ID={aws_access_key_id}
 AWS_SECRET_ACCESS_KEY={aws_secret_access_key}
 AWS_SSO_PROFILE={aws_sso_profile}
-AWS_REGION={aws_region}
 AWS_PROVISIONING_METHOD={aws_provisioning_method}
 
 # API Keys
@@ -694,6 +713,7 @@ REDIS_URL=redis://localhost:6379/0
         os.environ["KAMIWAZA_USERNAME"] = kamiwaza_username
         os.environ["KAMIWAZA_PASSWORD"] = kamiwaza_password
         os.environ["KAMIWAZA_DB_PATH"] = kamiwaza_db_path
+        os.environ["KAMIWAZA_PACKAGE_URL"] = kamiwaza_package_url
         os.environ["KAMIWAZA_PROVISION_SCRIPT"] = provision_script
         os.environ["KAIZEN_SOURCE"] = kaizen_source
         os.environ["DEFAULT_USER_PASSWORD"] = default_user_password
@@ -704,7 +724,6 @@ REDIS_URL=redis://localhost:6379/0
         os.environ["AWS_ACCESS_KEY_ID"] = aws_access_key_id
         os.environ["AWS_SECRET_ACCESS_KEY"] = aws_secret_access_key
         os.environ["AWS_SSO_PROFILE"] = aws_sso_profile
-        os.environ["AWS_REGION"] = aws_region
         os.environ["AWS_PROVISIONING_METHOD"] = aws_provisioning_method
         os.environ["ANTHROPIC_API_KEY"] = anthropic_api_key
         os.environ["N2YO_API_KEY"] = n2yo_api_key
@@ -719,6 +738,7 @@ REDIS_URL=redis://localhost:6379/0
             "KAMIWAZA_USERNAME": kamiwaza_username,
             "KAMIWAZA_PASSWORD": kamiwaza_password,
             "KAMIWAZA_DB_PATH": kamiwaza_db_path,
+            "KAMIWAZA_PACKAGE_URL": kamiwaza_package_url,
             "KAMIWAZA_PROVISION_SCRIPT": provision_script,
             "KAIZEN_SOURCE": kaizen_source,
             "DEFAULT_USER_PASSWORD": default_user_password,
@@ -729,7 +749,6 @@ REDIS_URL=redis://localhost:6379/0
             "AWS_ACCESS_KEY_ID": aws_access_key_id,
             "AWS_SECRET_ACCESS_KEY": aws_secret_access_key,
             "AWS_SSO_PROFILE": aws_sso_profile,
-            "AWS_REGION": aws_region,
             "AWS_PROVISIONING_METHOD": aws_provisioning_method,
             "ANTHROPIC_API_KEY": anthropic_api_key,
             "N2YO_API_KEY": n2yo_api_key,

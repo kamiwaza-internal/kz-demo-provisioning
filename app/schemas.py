@@ -26,6 +26,13 @@ class ContainerConfig(BaseModel):
 
 class JobCreate(BaseModel):
     job_name: str = Field(..., min_length=1, max_length=255)
+    deployment_type: str = Field(default="docker", pattern="^(docker|kamiwaza)$")
+
+    # Kamiwaza-specific fields
+    kamiwaza_branch: Optional[str] = "release/0.9.2"
+    kamiwaza_github_token: Optional[str] = None
+    kamiwaza_repo: Optional[str] = "https://github.com/kamiwaza-internal/kamiwaza.git"
+
     aws_region: str
     aws_auth_method: str = Field(..., pattern="^(assume_role|access_key)$")
 
@@ -50,11 +57,18 @@ class JobCreate(BaseModel):
     ami_id: Optional[str] = None
     tags: Optional[Dict[str, str]] = {}
 
-    # Docker
-    dockerhub_images: List[ContainerConfig]
+    # Docker (required for docker deployment type, optional for kamiwaza)
+    dockerhub_images: Optional[List[ContainerConfig]] = []
 
     # Notification
     requester_email: EmailStr
+
+    @validator("dockerhub_images")
+    def validate_dockerhub_images(cls, v, values):
+        deployment_type = values.get("deployment_type", "docker")
+        if deployment_type == "docker" and not v:
+            raise ValueError("dockerhub_images is required for docker deployment type")
+        return v
 
     @validator("aws_auth_method")
     def validate_auth_method(cls, v, values):
@@ -88,12 +102,16 @@ class JobResponse(BaseModel):
     id: int
     job_name: str
     status: str
+    deployment_type: Optional[str] = "docker"
     aws_region: str
     instance_type: str
     instance_id: Optional[str]
     public_ip: Optional[str]
     private_ip: Optional[str]
     requester_email: str
+    kamiwaza_ready: Optional[bool] = False
+    kamiwaza_check_attempts: Optional[int] = 0
+    kamiwaza_checked_at: Optional[datetime] = None
     created_at: datetime
     started_at: Optional[datetime]
     completed_at: Optional[datetime]

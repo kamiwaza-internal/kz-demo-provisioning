@@ -11,6 +11,14 @@ class Job(Base):
     job_name = Column(String(255), nullable=False)
     status = Column(String(50), default="pending")  # pending, queued, running, success, failed
 
+    # Deployment Type
+    deployment_type = Column(String(20), default="docker")  # docker or kamiwaza
+
+    # Kamiwaza-specific Configuration
+    kamiwaza_branch = Column(String(255), default="release/0.9.2", nullable=True)
+    kamiwaza_github_token = Column(String(500), nullable=True)
+    kamiwaza_repo = Column(String(500), default="https://github.com/kamiwaza-internal/kamiwaza.git", nullable=True)
+
     # AWS Configuration
     aws_region = Column(String(50), nullable=False)
     aws_auth_method = Column(String(20), nullable=False)  # assume_role or access_key
@@ -43,6 +51,11 @@ class Job(Base):
     public_ip = Column(String(50), nullable=True)
     private_ip = Column(String(50), nullable=True)
     terraform_outputs = Column(JSON, nullable=True)
+
+    # Kamiwaza deployment status
+    kamiwaza_ready = Column(Boolean, default=False)
+    kamiwaza_checked_at = Column(DateTime, nullable=True)
+    kamiwaza_check_attempts = Column(Integer, default=0)
 
     # Notifications
     requester_email = Column(String(255), nullable=False)

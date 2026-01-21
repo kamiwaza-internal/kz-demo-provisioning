@@ -27,6 +27,53 @@
         </div>
     </div>
 
+    <!-- Deployment Type Selection -->
+    <div class="card">
+        <h3>Deployment Type</h3>
+        <div class="form-group">
+            <label for="deployment_type">What would you like to deploy? *</label>
+            <select id="deployment_type" name="deployment_type" required onchange="toggleDeploymentFields()">
+                <option value="docker">Custom Docker Containers</option>
+                <option value="kamiwaza">Kamiwaza Full Stack</option>
+            </select>
+            <small>Select the type of deployment</small>
+        </div>
+
+        <div class="alert alert-info" id="deployment_info_docker">
+            <strong>Custom Docker Containers:</strong> Deploy your own containerized applications from DockerHub with custom configuration.
+        </div>
+
+        <div class="alert alert-info" id="deployment_info_kamiwaza" style="display: none;">
+            <strong>Kamiwaza Full Stack:</strong> Deploys the complete Kamiwaza platform including:
+            <ul style="margin: 10px 0 0 20px;">
+                <li>Infrastructure services (Traefik, etcd, Redis)</li>
+                <li>Databases (CockroachDB, Milvus vector DB)</li>
+                <li>Authentication (Keycloak)</li>
+                <li>Data Catalog (DataHub)</li>
+                <li>Kamiwaza Core Platform + Ray cluster</li>
+            </ul>
+            <br>
+            <strong>⚠️ Requires:</strong> t3.xlarge or larger instance (4+ vCPU, 16+ GB RAM, 100+ GB storage)
+        </div>
+    </div>
+
+    <!-- Kamiwaza Configuration (hidden by default) -->
+    <div class="card" id="kamiwaza_config" style="display: none;">
+        <h3>Kamiwaza Configuration</h3>
+
+        <div class="alert alert-info">
+            <strong>Package-based Installation:</strong>
+            Kamiwaza will be installed from the .deb package configured in Settings.
+            The package URL is set to use the latest stable release (v0.9.2).
+            To change the package version, update the Kamiwaza Package URL in <a href="/settings">Settings</a>.
+        </div>
+
+        <div class="alert alert-warning">
+            <strong>Note:</strong> Kamiwaza deployment takes 20-30 minutes to complete.
+            The EC2 instance will continue installation after it launches.
+        </div>
+    </div>
+
     <!-- AWS Region Selection -->
     <div class="card">
         <h3>AWS Region</h3>
@@ -86,7 +133,7 @@
                 <label for="instance_type">Instance Type *</label>
                 <select id="instance_type" name="instance_type" required>
                     {% for instance_type in allowed_instance_types %}
-                    <option value="{{ instance_type }}" {% if instance_type == 't3.micro' %}selected{% endif %}>
+                    <option value="{{ instance_type }}" {% if instance_type == 't3.xlarge' %}selected{% endif %}>
                         {{ instance_type }}
                     </option>
                     {% endfor %}
@@ -112,13 +159,13 @@
         </div>
     </div>
 
-    <!-- Docker Configuration -->
-    <div class="card">
+    <!-- Docker Configuration (only for custom Docker deployments) -->
+    <div class="card" id="docker_config">
         <h3>Docker Configuration</h3>
 
         <div class="form-group">
             <label for="dockerhub_images">Docker Containers (JSON) *</label>
-            <textarea id="dockerhub_images" name="dockerhub_images" rows="10" required>[
+            <textarea id="dockerhub_images" name="dockerhub_images" rows="10">[
   {
     "name": "webapp",
     "image": "nginx:latest",
@@ -132,8 +179,8 @@
         </div>
     </div>
 
-    <!-- User Configuration -->
-    <div class="card">
+    <!-- User Configuration (only for custom Docker deployments) -->
+    <div class="card" id="user_config">
         <h3>User Configuration</h3>
 
         <div class="form-group">
@@ -158,6 +205,71 @@ user2@example.com</pre>
 </form>
 
 <script>
-// AWS authentication is configured in Settings - no auth field toggling needed here
+// Toggle deployment-specific fields based on deployment type
+function toggleDeploymentFields() {
+    const deploymentType = document.getElementById('deployment_type').value;
+    const isKamiwaza = deploymentType === 'kamiwaza';
+
+    // Show/hide configuration sections
+    document.getElementById('kamiwaza_config').style.display = isKamiwaza ? 'block' : 'none';
+    document.getElementById('docker_config').style.display = isKamiwaza ? 'none' : 'block';
+    document.getElementById('user_config').style.display = isKamiwaza ? 'none' : 'block';
+
+    // Show/hide info alerts
+    document.getElementById('deployment_info_docker').style.display = isKamiwaza ? 'none' : 'block';
+    document.getElementById('deployment_info_kamiwaza').style.display = isKamiwaza ? 'block' : 'none';
+
+    // Update instance type recommendations
+    const instanceTypeSelect = document.getElementById('instance_type');
+    const volumeSizeInput = document.getElementById('volume_size_gb');
+
+    if (isKamiwaza) {
+        // Recommend larger instance for Kamiwaza
+        if (instanceTypeSelect.value === 't3.micro' || instanceTypeSelect.value === 't3.small') {
+            // Try to select t3.xlarge or larger
+            const options = Array.from(instanceTypeSelect.options);
+            const xlarge = options.find(opt => opt.value === 't3.xlarge');
+            if (xlarge) {
+                instanceTypeSelect.value = 't3.xlarge';
+            }
+        }
+
+        // Recommend larger volume
+        if (parseInt(volumeSizeInput.value) < 100) {
+            volumeSizeInput.value = '100';
+        }
+
+        // Make dockerhub_images optional for Kamiwaza
+        document.getElementById('dockerhub_images').removeAttribute('required');
+    } else {
+        // Make dockerhub_images required for Docker deployments
+        document.getElementById('dockerhub_images').setAttribute('required', 'required');
+    }
+}
+
+// Deprecated: Branch selection no longer needed with .deb package deployment
+// Package URL is now configured globally in Settings
+function toggleCustomBranch() {
+    // Function kept for backward compatibility but no longer used
+}
+
+// Form submission validation
+function validateForm(event) {
+    // No additional validation needed for Kamiwaza deployments
+    // Package URL is configured in Settings
+    return true;
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    toggleDeploymentFields();
+    toggleCustomBranch();
+
+    // Add form validation
+    const form = document.querySelector('form');
+    if (form) {
+        form.addEventListener('submit', validateForm);
+    }
+});
 </script>
 {% endblock %}

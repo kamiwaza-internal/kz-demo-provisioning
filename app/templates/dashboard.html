@@ -17,10 +17,10 @@
                 <tr>
                     <th>ID</th>
                     <th>Job Name</th>
+                    <th>Type</th>
                     <th>Status</th>
                     <th>Region</th>
-                    <th>Instance Type</th>
-                    <th>Instance ID</th>
+                    <th>Access URL</th>
                     <th>Created</th>
                     <th>Actions</th>
                 </tr>
@@ -31,13 +31,33 @@
                     <td>{{ job.id }}</td>
                     <td>{{ job.job_name }}</td>
                     <td>
+                        {% if job.deployment_type == 'kamiwaza' %}
+                        <span style="background: #e3f2fd; color: #1565c0; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600;">Kamiwaza</span>
+                        {% else %}
+                        <span style="background: #f3e5f5; color: #6a1b9a; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600;">Docker</span>
+                        {% endif %}
+                    </td>
+                    <td>
                         <span class="status status-{{ job.status }}">
                             {{ job.status }}
                         </span>
                     </td>
                     <td>{{ job.aws_region }}</td>
-                    <td>{{ job.instance_type }}</td>
-                    <td>{{ job.instance_id or '-' }}</td>
+                    <td>
+                        {% if job.deployment_type == 'kamiwaza' and job.status == 'success' and job.public_ip %}
+                            {% if job.kamiwaza_ready %}
+                            <a href="https://{{ job.public_ip }}" target="_blank" class="btn btn-primary" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;">
+                                🚀 Open Kamiwaza
+                            </a>
+                            {% else %}
+                            <span style="color: #ff9800; font-size: 0.85rem;">⏳ Deploying...</span>
+                            {% endif %}
+                        {% elif job.public_ip %}
+                        <code style="font-size: 0.85rem;">{{ job.public_ip }}</code>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
                     <td>{{ job.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
                     <td>
                         <a href="/jobs/{{ job.id }}" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;">View</a>
