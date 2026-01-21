@@ -62,6 +62,191 @@ async def dashboard(
     })
 
 
+def get_latest_cached_ami(region: str = "us-east-1") -> Optional[Dict]:
+    """Get the latest cached Kamiwaza AMI for a region"""
+    try:
+        from app.aws_cdk_provisioner import AWSCDKProvisioner
+        import boto3
+        from botocore.exceptions import ClientError
+
+        # Get credentials
+        provisioner = AWSCDKProvisioner()
+        auth_method = settings.aws_auth_method
+
+        credentials = None
+
+        try:
+            if auth_method == "assume_role":
+                role_arn = settings.aws_assume_role_arn
+                external_id = settings.aws_external_id
+                session_name = settings.aws_session_name
+
+                if not role_arn:
+                    return None
+
+                credentials = provisioner.assume_role(
+                    role_arn=role_arn,
+                    session_name=session_name,
+                    external_id=external_id,
+                    region=region
+                )
+            elif auth_method == "access_keys":
+                access_key = settings.aws_access_key_id
+                secret_key = settings.aws_secret_access_key
+
+                if not access_key or not secret_key:
+                    return None
+
+                credentials = {
+                    'access_key': access_key,
+                    'secret_key': secret_key,
+                    'region': region
+                }
+        except Exception:
+            return None
+
+        # List AMIs
+        ec2_client = boto3.client(
+            'ec2',
+            region_name=region,
+            aws_access_key_id=credentials.get('access_key'),
+            aws_secret_access_key=credentials.get('secret_key'),
+            aws_session_token=credentials.get('session_token')
+        )
+
+        # Get all AMIs owned by self and filter for Kamiwaza AMIs
+        # (supports both manual and auto-created AMIs with different tags)
+        response = ec2_client.describe_images(
+            Filters=[
+                {
+                    'Name': 'state',
+                    'Values': ['available']
+                }
+            ],
+            Owners=['self']
+        )
+
+        # Filter for Kamiwaza AMIs (check for either tag scheme)
+        amis = []
+        for image in response.get('Images', []):
+            tags = {tag['Key']: tag['Value'] for tag in image.get('Tags', [])}
+            # Check if it's a Kamiwaza AMI (either manually created or auto-created)
+            if tags.get('Application') == 'Kamiwaza' or tags.get('ManagedBy') == 'KamiwazaDeploymentManager':
+                amis.append(image)
+        if not amis:
+            return None
+
+        # Sort by creation date (newest first)
+        amis.sort(key=lambda x: x.get('CreationDate', ''), reverse=True)
+
+        # Get the latest AMI
+        latest_ami = amis[0]
+        tags = {tag['Key']: tag['Value'] for tag in latest_ami.get('Tags', [])}
+
+        return {
+            'ami_id': latest_ami['ImageId'],
+            'name': latest_ami.get('Name', 'Unknown'),
+            'version': tags.get('Version', tags.get('KamiwazaVersion', 'Unknown')),
+            'creation_date': latest_ami.get('CreationDate', '')
+        }
+
+    except Exception as e:
+        logger.warning(f"Failed to get cached AMI for region {region}: {str(e)}")
+        logger.debug(f"Auth method: {settings.aws_auth_method}, Has credentials: {bool(credentials)}")
+        return None
+
+
+def get_available_amis(region: str = "us-east-1", limit: int = 10) -> List[Dict]:
+    """Get available Kamiwaza AMIs for a region (up to limit)"""
+    try:
+        from app.aws_cdk_provisioner import AWSCDKProvisioner
+        import boto3
+        from botocore.exceptions import ClientError
+
+        # Get credentials
+        provisioner = AWSCDKProvisioner()
+        auth_method = settings.aws_auth_method
+
+        credentials = None
+
+        try:
+            if auth_method == "assume_role":
+                role_arn = settings.aws_assume_role_arn
+                external_id = settings.aws_external_id
+                session_name = settings.aws_session_name
+
+                if not role_arn:
+                    return []
+
+                credentials = provisioner.assume_role(
+                    role_arn=role_arn,
+                    session_name=session_name,
+                    external_id=external_id,
+                    region=region
+                )
+            elif auth_method == "access_keys":
+                access_key = settings.aws_access_key_id
+                secret_key = settings.aws_secret_access_key
+
+                if not access_key or not secret_key:
+                    return []
+
+                credentials = {
+                    'access_key': access_key,
+                    'secret_key': secret_key,
+                    'region': region
+                }
+        except Exception:
+            return []
+
+        # List AMIs
+        ec2_client = boto3.client(
+            'ec2',
+            region_name=region,
+            aws_access_key_id=credentials.get('access_key'),
+            aws_secret_access_key=credentials.get('secret_key'),
+            aws_session_token=credentials.get('session_token')
+        )
+
+        # Get all AMIs owned by self and filter for Kamiwaza AMIs
+        response = ec2_client.describe_images(
+            Filters=[
+                {
+                    'Name': 'state',
+                    'Values': ['available']
+                }
+            ],
+            Owners=['self']
+        )
+
+        # Filter for Kamiwaza AMIs (check for either tag scheme)
+        amis = []
+        for image in response.get('Images', []):
+            tags = {tag['Key']: tag['Value'] for tag in image.get('Tags', [])}
+            # Check if it's a Kamiwaza AMI (either manually created or auto-created)
+            if tags.get('Application') == 'Kamiwaza' or tags.get('ManagedBy') == 'KamiwazaDeploymentManager':
+                amis.append({
+                    'ami_id': image['ImageId'],
+                    'name': image.get('Name', 'Unknown'),
+                    'version': tags.get('Version', tags.get('KamiwazaVersion', 'Unknown')),
+                    'creation_date': image.get('CreationDate', ''),
+                    'state': image.get('State', 'unknown')
+                })
+
+        if not amis:
+            return []
+
+        # Sort by creation date (newest first)
+        amis.sort(key=lambda x: x.get('creation_date', ''), reverse=True)
+
+        # Return up to limit AMIs
+        return amis[:limit]
+
+    except Exception as e:
+        logger.warning(f"Failed to get AMIs for region {region}: {str(e)}")
+        return []
+
+
 @app.get("/jobs/new", response_class=HTMLResponse)
 async def new_job_form(
     request: Request
@@ -69,12 +254,17 @@ async def new_job_form(
     """Display form to create new job"""
     csrf_token = csrf_protection.generate_token()
 
+    # Try to get available AMIs for default region (up to 10)
+    default_region = settings.allowed_regions_list[0] if settings.allowed_regions_list else "us-east-1"
+    available_amis = get_available_amis(default_region, limit=10)
+
     return templates.TemplateResponse("job_new.html", {
         "request": request,
         "csrf_token": csrf_token,
         "allowed_regions": settings.allowed_regions_list,
         "allowed_instance_types": settings.allowed_instance_types_list,
-        "allow_access_key_auth": settings.allow_access_key_auth
+        "allow_access_key_auth": settings.allow_access_key_auth,
+        "available_amis": available_amis
     })
 
 
@@ -688,6 +878,7 @@ async def settings_page(
         "KAMIWAZA_PASSWORD": os.environ.get("KAMIWAZA_PASSWORD", settings.kamiwaza_password),
         "KAMIWAZA_DB_PATH": os.environ.get("KAMIWAZA_DB_PATH", settings.kamiwaza_db_path),
         "KAMIWAZA_PACKAGE_URL": os.environ.get("KAMIWAZA_PACKAGE_URL", settings.kamiwaza_package_url),
+        "APP_GARDEN_URL": os.environ.get("APP_GARDEN_URL", settings.app_garden_url),
         "KAMIWAZA_PROVISION_SCRIPT": os.environ.get("KAMIWAZA_PROVISION_SCRIPT", settings.kamiwaza_provision_script),
         "KAIZEN_SOURCE": os.environ.get("KAIZEN_SOURCE", settings.kaizen_source),
         "DEFAULT_USER_PASSWORD": os.environ.get("DEFAULT_USER_PASSWORD", settings.default_user_password),
@@ -728,6 +919,7 @@ async def save_settings(
     kamiwaza_password: str = Form(...),
     kamiwaza_db_path: str = Form(""),
     kamiwaza_package_url: str = Form(...),
+    app_garden_url: str = Form("https://dev-info.kamiwaza.ai/garden/v2/apps.json"),
     provision_script: str = Form(...),
     kaizen_source: str = Form(...),
     default_user_password: str = Form(...),
@@ -763,6 +955,9 @@ KAMIWAZA_DB_PATH={kamiwaza_db_path}
 
 # Kamiwaza Package
 KAMIWAZA_PACKAGE_URL={kamiwaza_package_url}
+
+# App Garden & Toolshed
+APP_GARDEN_URL={app_garden_url}
 
 # Script Paths
 KAMIWAZA_PROVISION_SCRIPT={provision_script}
@@ -805,6 +1000,7 @@ REDIS_URL=redis://localhost:6379/0
         os.environ["KAMIWAZA_PASSWORD"] = kamiwaza_password
         os.environ["KAMIWAZA_DB_PATH"] = kamiwaza_db_path
         os.environ["KAMIWAZA_PACKAGE_URL"] = kamiwaza_package_url
+        os.environ["APP_GARDEN_URL"] = app_garden_url
         os.environ["KAMIWAZA_PROVISION_SCRIPT"] = provision_script
         os.environ["KAIZEN_SOURCE"] = kaizen_source
         os.environ["DEFAULT_USER_PASSWORD"] = default_user_password
@@ -830,6 +1026,7 @@ REDIS_URL=redis://localhost:6379/0
             "KAMIWAZA_PASSWORD": kamiwaza_password,
             "KAMIWAZA_DB_PATH": kamiwaza_db_path,
             "KAMIWAZA_PACKAGE_URL": kamiwaza_package_url,
+            "APP_GARDEN_URL": app_garden_url,
             "KAMIWAZA_PROVISION_SCRIPT": provision_script,
             "KAIZEN_SOURCE": kaizen_source,
             "DEFAULT_USER_PASSWORD": default_user_password,
@@ -860,6 +1057,207 @@ REDIS_URL=redis://localhost:6379/0
     except Exception as e:
         logger.error(f"Error saving settings: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to save settings: {str(e)}")
+
+
+@app.get("/api/cached-ami")
+async def get_cached_ami_api(region: str = "us-east-1"):
+    """Get available Kamiwaza AMIs for a specific region"""
+    try:
+        available_amis = get_available_amis(region, limit=10)
+        if available_amis:
+            return JSONResponse({
+                "success": True,
+                "amis": available_amis,
+                "count": len(available_amis)
+            })
+        else:
+            return JSONResponse({
+                "success": False,
+                "error": "No cached AMIs found for this region",
+                "amis": [],
+                "count": 0
+            })
+    except Exception as e:
+        logger.error(f"Error fetching cached AMIs: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e),
+            "amis": [],
+            "count": 0
+        }, status_code=500)
+
+
+@app.get("/api/jobs/{job_id}/available-apps")
+async def get_available_apps(job_id: int, db: Session = Depends(get_db)):
+    """Get available apps from app garden for a job"""
+    try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            return JSONResponse({
+                "success": False,
+                "error": "Job not found"
+            }, status_code=404)
+
+        # Check if job is a Kamiwaza deployment
+        if job.deployment_type != "kamiwaza":
+            return JSONResponse({
+                "success": False,
+                "error": "This job is not a Kamiwaza deployment"
+            }, status_code=400)
+
+        from app.kamiwaza_app_hydrator import KamiwazaAppHydrator
+
+        # Fetch apps from app garden
+        hydrator = KamiwazaAppHydrator()
+        success, apps_data, error_msg = hydrator.fetch_app_garden_data()
+
+        if not success:
+            return JSONResponse({
+                "success": False,
+                "error": error_msg
+            }, status_code=500)
+
+        # Return apps with relevant info
+        apps = []
+        for app in apps_data:
+            apps.append({
+                "name": app.get("name", "Unknown"),
+                "version": app.get("version", "Unknown"),
+                "description": app.get("description", ""),
+                "category": app.get("category", "app"),
+                "tags": app.get("tags", []),
+                "preview_image": app.get("preview_image", ""),
+                "verified": app.get("verified", False),
+                "risk_tier": app.get("risk_tier", 0)
+            })
+
+        return JSONResponse({
+            "success": True,
+            "apps": apps,
+            "count": len(apps)
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching available apps: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+
+@app.post("/api/jobs/{job_id}/deploy-apps")
+async def deploy_apps_to_job(
+    job_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Deploy selected apps to a Kamiwaza instance"""
+    try:
+        body = await request.json()
+        csrf_token = body.get("csrf_token")
+        app_names = body.get("app_names", [])
+
+        # Verify CSRF token
+        if not csrf_protection.verify_token(csrf_token):
+            return JSONResponse({
+                "success": False,
+                "error": "Invalid CSRF token"
+            }, status_code=403)
+
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            return JSONResponse({
+                "success": False,
+                "error": "Job not found"
+            }, status_code=404)
+
+        # Check if job is ready
+        if not job.kamiwaza_ready:
+            return JSONResponse({
+                "success": False,
+                "error": "Kamiwaza instance is not ready yet"
+            }, status_code=400)
+
+        if not app_names:
+            return JSONResponse({
+                "success": False,
+                "error": "No apps selected"
+            }, status_code=400)
+
+        from app.kamiwaza_app_hydrator import KamiwazaAppHydrator
+
+        # Fetch all available apps
+        hydrator = KamiwazaAppHydrator()
+        success, apps_data, error_msg = hydrator.fetch_app_garden_data()
+
+        if not success:
+            return JSONResponse({
+                "success": False,
+                "error": f"Failed to fetch app garden data: {error_msg}"
+            }, status_code=500)
+
+        # Filter selected apps
+        selected_apps = [app for app in apps_data if app.get("name") in app_names]
+
+        if not selected_apps:
+            return JSONResponse({
+                "success": False,
+                "error": "No matching apps found"
+            }, status_code=400)
+
+        # Authenticate with Kamiwaza
+        auth_success, token, auth_error = hydrator.authenticate()
+        if not auth_success:
+            return JSONResponse({
+                "success": False,
+                "error": f"Authentication failed: {auth_error}"
+            }, status_code=500)
+
+        # Deploy each app
+        deployed_apps = []
+        failed_apps = []
+
+        for app in selected_apps:
+            app_name = app.get("name", "Unknown")
+            upload_success, upload_msg = hydrator.upload_app_template(token, app)
+
+            if upload_success:
+                deployed_apps.append(app_name)
+                # Log deployment
+                log = JobLog(
+                    job_id=job.id,
+                    level="info",
+                    message=f"✓ Deployed app: {app_name} v{app.get('version', 'Unknown')}",
+                    source="app-deployment"
+                )
+                db.add(log)
+            else:
+                failed_apps.append({"name": app_name, "error": upload_msg})
+                # Log failure
+                log = JobLog(
+                    job_id=job.id,
+                    level="error",
+                    message=f"✗ Failed to deploy app {app_name}: {upload_msg}",
+                    source="app-deployment"
+                )
+                db.add(log)
+
+        db.commit()
+
+        return JSONResponse({
+            "success": True,
+            "deployed": deployed_apps,
+            "failed": failed_apps,
+            "deployed_count": len(deployed_apps),
+            "failed_count": len(failed_apps)
+        })
+
+    except Exception as e:
+        logger.error(f"Error deploying apps: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
 
 
 @app.post("/api/test-kamiwaza-connection")
@@ -933,11 +1331,20 @@ async def ami_manager_page(
     provisioner = AWSCDKProvisioner()
     credentials_available, credentials_message = provisioner.check_base_credentials()
 
+    # Get default package URL from settings
+    default_package_url = os.environ.get(
+        "KAMIWAZA_PACKAGE_URL",
+        "https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb"
+    )
+
     return templates.TemplateResponse("ami_manager.html", {
         "request": request,
         "csrf_token": csrf_token,
         "aws_credentials_available": credentials_available,
-        "aws_credentials_message": credentials_message
+        "aws_credentials_message": credentials_message,
+        "allowed_regions": settings.allowed_regions_list,
+        "allowed_instance_types": settings.allowed_instance_types_list,
+        "default_package_url": default_package_url
     })
 
 
@@ -1002,13 +1409,8 @@ async def list_amis(
             aws_session_token=credentials.get('session_token')
         )
 
+        # Get all AMIs owned by self
         response = ec2_client.describe_images(
-            Filters=[
-                {
-                    'Name': 'tag:ManagedBy',
-                    'Values': ['KamiwazaDeploymentManager']
-                }
-            ],
             Owners=['self']
         )
 
@@ -1016,6 +1418,10 @@ async def list_amis(
         for image in response.get('Images', []):
             # Extract tags
             tags = {tag['Key']: tag['Value'] for tag in image.get('Tags', [])}
+
+            # Only include Kamiwaza AMIs (either manually created or auto-created)
+            if not (tags.get('Application') == 'Kamiwaza' or tags.get('ManagedBy') == 'KamiwazaDeploymentManager'):
+                continue
 
             # Get snapshot info
             snapshots = []
@@ -1035,7 +1441,7 @@ async def list_amis(
                 'state': image.get('State', 'unknown'),
                 'creation_date': image.get('CreationDate', ''),
                 'size_gb': total_size,
-                'version': tags.get('KamiwazaVersion', 'Unknown'),
+                'version': tags.get('Version', tags.get('KamiwazaVersion', 'Unknown')),
                 'created_from': tags.get('CreatedFrom', ''),
                 'created_from_job': tags.get('CreatedFromJob', ''),
                 'auto_created': tags.get('AutoCreated', 'false'),
@@ -1184,6 +1590,313 @@ async def delete_ami(
         }, status_code=500)
     except Exception as e:
         logger.error(f"Error deleting AMI {ami_id}: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+
+@app.post("/api/amis/create")
+async def create_ami_from_package(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Create an AMI from a Kamiwaza .deb package"""
+    try:
+        body = await request.json()
+        csrf_token = body.get("csrf_token")
+
+        # Verify CSRF token
+        if not csrf_protection.verify_token(csrf_token):
+            return JSONResponse({
+                "success": False,
+                "error": "Invalid CSRF token"
+            }, status_code=403)
+
+        # Extract parameters
+        region = body.get("region")
+        package_url = body.get("package_url")
+        version = body.get("version")
+        instance_type = body.get("instance_type", "t3.xlarge")
+        deployment_mode = body.get("deployment_mode", "full")
+
+        # Validate required fields
+        if not all([region, package_url, version]):
+            return JSONResponse({
+                "success": False,
+                "error": "Missing required fields: region, package_url, version"
+            }, status_code=400)
+
+        # Normalize version tag
+        if not version.startswith('v'):
+            version = f'v{version}'
+
+        # Create a special job for AMI creation
+        job_name = f"AMI Creation - {version}"
+
+        # Get auth method and related fields from settings
+        auth_method = settings.aws_auth_method
+
+        # Create job in database
+        job = Job(
+            job_name=job_name,
+            requester_email="system@kamiwaza.ai",  # System job
+            deployment_type="kamiwaza",
+            aws_region=region,
+            aws_auth_method=auth_method,  # Required field
+            assume_role_arn=settings.aws_assume_role_arn if auth_method == "assume_role" else None,
+            external_id=settings.aws_external_id if auth_method == "assume_role" else None,
+            session_name=settings.aws_session_name if auth_method == "assume_role" else None,
+            instance_type=instance_type,
+            volume_size_gb=100,  # Sufficient for Kamiwaza
+            status="pending",
+            kamiwaza_deployment_mode=deployment_mode,
+            kamiwaza_branch=version,  # Store version in branch field
+            use_cached_ami=False,  # Don't use cached AMI when building new AMI
+            dockerhub_images=[],  # Required field (empty for Kamiwaza deployments)
+            tags={
+                "Purpose": "AMI-Creation",
+                "Version": version,
+                "CreatedFrom": "AMI-Manager",
+                "PackageURL": package_url  # Store package URL in tags
+            }
+        )
+
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+
+        logger.info(f"Created AMI creation job {job.id} for version {version}")
+
+        # Trigger the provisioning job (will auto-create AMI when ready)
+        from worker.tasks import execute_provisioning_job
+        execute_provisioning_job.apply_async(args=[job.id])
+
+        # Log the creation
+        from app.models import JobLog
+        log = JobLog(
+            job_id=job.id,
+            level="info",
+            message=f"AMI creation job started for Kamiwaza {version}",
+            source="ami-manager"
+        )
+        db.add(log)
+
+        log = JobLog(
+            job_id=job.id,
+            level="info",
+            message=f"Package URL: {package_url}",
+            source="ami-manager"
+        )
+        db.add(log)
+
+        log = JobLog(
+            job_id=job.id,
+            level="info",
+            message=f"Deployment Mode: {deployment_mode}",
+            source="ami-manager"
+        )
+        db.add(log)
+
+        log = JobLog(
+            job_id=job.id,
+            level="info",
+            message=f"Expected completion time: ~40-50 minutes",
+            source="ami-manager"
+        )
+        db.add(log)
+
+        db.commit()
+
+        return JSONResponse({
+            "success": True,
+            "job_id": job.id,
+            "message": f"AMI creation job started for version {version}",
+            "estimated_time_minutes": 50
+        })
+
+    except Exception as e:
+        logger.error(f"Error creating AMI job: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+
+@app.post("/api/jobs/{job_id}/destroy-stack")
+async def destroy_cloudformation_stack(
+    job_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Delete the CloudFormation stack for a job"""
+    try:
+        body = await request.json()
+        csrf_token = body.get("csrf_token")
+
+        # Verify CSRF token
+        if not csrf_protection.verify_token(csrf_token):
+            return JSONResponse({
+                "success": False,
+                "error": "Invalid CSRF token"
+            }, status_code=403)
+
+        # Get job from database
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            return JSONResponse({
+                "success": False,
+                "error": "Job not found"
+            }, status_code=404)
+
+        # Check if job has been deployed
+        if not job.instance_id and job.status != "success":
+            return JSONResponse({
+                "success": False,
+                "error": "No CloudFormation stack exists for this job"
+            }, status_code=400)
+
+        from app.aws_cdk_provisioner import AWSCDKProvisioner
+        import boto3
+        from botocore.exceptions import NoCredentialsError, ClientError as BotoClientError
+
+        # Get credentials
+        provisioner = AWSCDKProvisioner()
+        auth_method = job.aws_auth_method or settings.aws_auth_method
+
+        credentials = None
+
+        try:
+            if auth_method == "assume_role":
+                role_arn = job.assume_role_arn or settings.aws_assume_role_arn
+                external_id = job.external_id or settings.aws_external_id
+                session_name = job.session_name or settings.aws_session_name
+
+                if not role_arn:
+                    raise Exception("AWS_ASSUME_ROLE_ARN not configured")
+
+                # First check if base credentials are available
+                try:
+                    sts_test = boto3.client('sts')
+                    caller_id = sts_test.get_caller_identity()
+                    logger.info(f"Base credentials found: {caller_id.get('Arn')}")
+                except NoCredentialsError:
+                    raise Exception(
+                        "No base AWS credentials found. To assume a role, you need base credentials configured. "
+                        "Please set up AWS SSO (run 'aws sso login'), set environment variables "
+                        "(AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY), or configure an IAM instance profile."
+                    )
+                except BotoClientError as e:
+                    raise Exception(f"Base credentials are invalid: {str(e)}")
+
+                credentials = provisioner.assume_role(
+                    role_arn=role_arn,
+                    session_name=session_name,
+                    external_id=external_id,
+                    region=job.aws_region
+                )
+            elif auth_method == "access_keys":
+                access_key = settings.aws_access_key_id
+                secret_key = settings.aws_secret_access_key
+
+                if not access_key or not secret_key:
+                    raise Exception("AWS access keys not configured in settings")
+
+                credentials = {
+                    'access_key': access_key,
+                    'secret_key': secret_key,
+                    'region': job.aws_region
+                }
+            else:
+                raise Exception(f"Unknown AWS auth method: {auth_method}")
+        except Exception as e:
+            logger.error(f"Failed to get AWS credentials for job {job_id}: {str(e)}")
+            return JSONResponse({
+                "success": False,
+                "error": f"Failed to get AWS credentials: {str(e)}"
+            }, status_code=500)
+
+        # Log stack deletion start
+        log = JobLog(
+            job_id=job.id,
+            level="info",
+            message=f"Starting CloudFormation stack deletion for kamiwaza-job-{job_id}",
+            source="system"
+        )
+        db.add(log)
+        db.commit()
+
+        # Call CDK destroy
+        success, log_lines = provisioner.destroy_ec2_instance(
+            job_id=job_id,
+            credentials=credentials,
+            callback=lambda msg: db.add(JobLog(
+                job_id=job.id,
+                level="info",
+                message=msg,
+                source="cdk"
+            )) or db.commit()
+        )
+
+        if success:
+            # Update job status
+            job.status = "destroyed"
+            job.instance_id = None
+            job.public_ip = None
+            job.private_ip = None
+
+            # Log success
+            log = JobLog(
+                job_id=job.id,
+                level="info",
+                message=f"CloudFormation stack kamiwaza-job-{job_id} destroyed successfully",
+                source="system"
+            )
+            db.add(log)
+            db.commit()
+
+            logger.info(f"Successfully destroyed CloudFormation stack for job {job_id}")
+
+            return JSONResponse({
+                "success": True,
+                "message": f"CloudFormation stack destroyed successfully",
+                "job_id": job_id
+            })
+        else:
+            # Log failure
+            error_msg = "\n".join(log_lines[-10:]) if log_lines else "Unknown error"
+            log = JobLog(
+                job_id=job.id,
+                level="error",
+                message=f"Failed to destroy CloudFormation stack: {error_msg}",
+                source="system"
+            )
+            db.add(log)
+            db.commit()
+
+            logger.error(f"Failed to destroy CloudFormation stack for job {job_id}: {error_msg}")
+
+            return JSONResponse({
+                "success": False,
+                "error": f"Failed to destroy stack: {error_msg}"
+            }, status_code=500)
+
+    except Exception as e:
+        logger.error(f"Error destroying CloudFormation stack for job {job_id}: {str(e)}")
+
+        # Log error
+        try:
+            log = JobLog(
+                job_id=job_id,
+                level="error",
+                message=f"Error destroying stack: {str(e)}",
+                source="system"
+            )
+            db.add(log)
+            db.commit()
+        except:
+            pass
+
         return JSONResponse({
             "success": False,
             "error": str(e)

@@ -83,6 +83,21 @@ log "✓ Package downloaded to /tmp/$PACKAGE_FILENAME"
 
 # Step 3: Install Kamiwaza package (per official instructions)
 log "Step 3: Installing Kamiwaza with 'sudo apt install -f -y /tmp/$PACKAGE_FILENAME'..."
+
+# CRITICAL: Set KAMIWAZA_LITE environment variable BEFORE installation
+# The .deb package's postinst script reads this variable to configure the mode
+if [ "$KAMIWAZA_DEPLOYMENT_MODE" = "lite" ]; then
+    log "Setting KAMIWAZA_LITE=true for lite mode installation..."
+    export KAMIWAZA_LITE=true
+    export DEBIAN_FRONTEND=noninteractive
+    echo "kamiwaza kamiwaza/mode string lite" | debconf-set-selections
+else
+    log "Setting KAMIWAZA_LITE=false for full mode installation..."
+    export KAMIWAZA_LITE=false
+    export DEBIAN_FRONTEND=noninteractive
+    echo "kamiwaza kamiwaza/mode string full" | debconf-set-selections
+fi
+
 apt install -f -y "/tmp/$PACKAGE_FILENAME"
 
 if [ $? -ne 0 ]; then

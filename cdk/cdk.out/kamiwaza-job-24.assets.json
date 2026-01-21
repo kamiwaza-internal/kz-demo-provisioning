@@ -1,0 +1,21 @@
+{
+  "version": "48.0.0",
+  "files": {
+    "01101d4f77132e32a48bc4401cd324642f0eacdecd5ffc6c1459af12c4180cb9": {
+      "displayName": "kamiwaza-job-24 Template",
+      "source": {
+        "path": "kamiwaza-job-24.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "916994818137-us-east-1-0ffee87c": {
+          "bucketName": "cdk-hnb659fds-assets-916994818137-us-east-1",
+          "objectKey": "01101d4f77132e32a48bc4401cd324642f0eacdecd5ffc6c1459af12c4180cb9.json",
+          "region": "us-east-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::916994818137:role/cdk-hnb659fds-file-publishing-role-916994818137-us-east-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

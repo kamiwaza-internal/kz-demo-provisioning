@@ -73,6 +73,11 @@
                     <td>{{ job.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
                     <td>
                         <a href="/jobs/{{ job.id }}" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;">View</a>
+                        {% if job.status == 'success' and job.instance_id %}
+                        <button onclick="destroyStack({{ job.id }}, event)" class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.85rem; margin-left: 0.25rem;" title="Delete CloudFormation Stack">
+                            🗑️
+                        </button>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -164,6 +169,58 @@ function deleteSelectedJobs() {
         alert('Error deleting jobs: ' + error.message);
         deleteBtn.innerHTML = originalText;
         deleteBtn.disabled = false;
+    });
+}
+
+function destroyStack(jobId, event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const confirmed = confirm(
+        'Are you sure you want to delete the CloudFormation stack?\n\n' +
+        'This will:\n' +
+        '• Terminate the EC2 instance\n' +
+        '• Delete all associated AWS resources\n' +
+        '• Clean up the CloudFormation stack\n\n' +
+        'This action cannot be undone!'
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    // Show loading state
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '⏳';
+    button.disabled = true;
+
+    // Send delete request
+    fetch(`/api/jobs/${jobId}/destroy-stack`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            csrf_token: '{{ csrf_token }}'
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('CloudFormation stack deletion initiated successfully!\n\nThe stack is being destroyed. This may take a few minutes.');
+            // Reload the page to show updated status
+            window.location.reload();
+        } else {
+            alert('Error deleting stack: ' + (data.error || 'Unknown error'));
+            button.innerHTML = originalText;
+            button.disabled = false;
+        }
+    })
+    .catch(error => {
+        alert('Error deleting stack: ' + error.message);
+        button.innerHTML = originalText;
+        button.disabled = false;
     });
 }
 </script>

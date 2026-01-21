@@ -5,15 +5,20 @@
 {% block content %}
 <div class="card">
     <h2>Job #{{ job.id }}: {{ job.job_name }}</h2>
-    <p>
+    <p style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
         <span class="status status-{{ job.status }}">{{ job.status }}</span>
         {% if job.status in ['pending', 'failed'] %}
         <form method="POST" action="/jobs/{{ job.id }}/run" style="display: inline;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit" class="btn btn-primary" style="margin-left: 1rem;">
+            <button type="submit" class="btn btn-primary">
                 {% if job.status == 'pending' %}Start Job{% else %}Retry Job{% endif %}
             </button>
         </form>
+        {% endif %}
+        {% if job.status == 'success' and job.instance_id %}
+        <button onclick="confirmDestroyStack()" class="btn btn-danger">
+            🗑️ Delete CloudFormation Stack
+        </button>
         {% endif %}
     </p>
 </div>
@@ -328,5 +333,55 @@ function pollKamiwazaReadiness() {
 readinessInterval = setInterval(pollKamiwazaReadiness, 5000);  // Check every 5 seconds
 pollKamiwazaReadiness();  // Call immediately
 {% endif %}
+
+// CloudFormation Stack Deletion
+function confirmDestroyStack() {
+    const confirmed = confirm(
+        'Are you sure you want to delete the CloudFormation stack for this job?\n\n' +
+        'This will:\n' +
+        '• Terminate the EC2 instance\n' +
+        '• Delete all associated AWS resources (security groups, network interfaces, etc.)\n' +
+        '• Clean up the CloudFormation stack\n\n' +
+        'This action cannot be undone!'
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    // Show loading state
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '⏳ Deleting stack...';
+    button.disabled = true;
+
+    // Send delete request
+    fetch('/api/jobs/{{ job.id }}/destroy-stack', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            csrf_token: '{{ csrf_token }}'
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('CloudFormation stack deletion initiated successfully!\n\nThe stack is being destroyed. This may take a few minutes.');
+            // Reload the page to show updated status
+            window.location.reload();
+        } else {
+            alert('Error deleting stack: ' + (data.error || 'Unknown error'));
+            button.innerHTML = originalText;
+            button.disabled = false;
+        }
+    })
+    .catch(error => {
+        alert('Error deleting stack: ' + error.message);
+        button.innerHTML = originalText;
+        button.disabled = false;
+    });
+}
 </script>
 {% endblock %}

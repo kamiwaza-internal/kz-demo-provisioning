@@ -34,7 +34,7 @@
             <label for="deployment_type">What would you like to deploy? *</label>
             <select id="deployment_type" name="deployment_type" required onchange="toggleDeploymentFields()">
                 <option value="docker">Custom Docker Containers</option>
-                <option value="kamiwaza">Kamiwaza Full Stack</option>
+                <option value="kamiwaza" selected>Kamiwaza Full Stack</option>
             </select>
             <small>Select the type of deployment</small>
         </div>
@@ -102,77 +102,86 @@
         </div>
     </div>
 
+    <!-- Baked AMIs -->
+    <div class="card">
+        <h3>🍞 Baked AMIs</h3>
+        <div class="form-group">
+            <label for="ami_id">AMI ID</label>
+            <select id="ami_id" name="ami_id">
+                <option value="">None - Install from scratch</option>
+                {% for ami in available_amis %}
+                <option value="{{ ami.ami_id }}">{{ ami.ami_id }} - {{ ami.name }} (v{{ ami.version }})</option>
+                {% endfor %}
+            </select>
+            <small id="ami_help_text">Select a pre-baked Kamiwaza AMI for faster deployment, or install from scratch</small>
+        </div>
+    </div>
+
     <!-- Network Configuration -->
     <div class="card">
-        <h3>Network Configuration</h3>
+        <h3 style="cursor: pointer; user-select: none;" onclick="toggleSection('network_config_content')">
+            <span id="network_config_toggle">▶</span> Network Configuration
+        </h3>
 
-        <div class="grid grid-2">
-            <div class="form-group">
-                <label for="vpc_id">VPC ID</label>
-                <input type="text" id="vpc_id" name="vpc_id" placeholder="vpc-xxxxx">
-                <small>Leave empty for default VPC</small>
+        <div id="network_config_content" style="display: none;">
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label for="vpc_id">VPC ID</label>
+                    <input type="text" id="vpc_id" name="vpc_id" placeholder="vpc-xxxxx">
+                    <small>Leave empty for default VPC</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="subnet_id">Subnet ID</label>
+                    <input type="text" id="subnet_id" name="subnet_id" placeholder="subnet-xxxxx">
+                    <small>Leave empty for default subnet</small>
+                </div>
             </div>
 
             <div class="form-group">
-                <label for="subnet_id">Subnet ID</label>
-                <input type="text" id="subnet_id" name="subnet_id" placeholder="subnet-xxxxx">
-                <small>Leave empty for default subnet</small>
+                <label for="security_group_ids">Security Group IDs</label>
+                <input type="text" id="security_group_ids" name="security_group_ids" placeholder="sg-xxxxx, sg-yyyyy">
+                <small>Comma-separated list. Leave empty to create a default SG</small>
             </div>
-        </div>
 
-        <div class="form-group">
-            <label for="security_group_ids">Security Group IDs</label>
-            <input type="text" id="security_group_ids" name="security_group_ids" placeholder="sg-xxxxx, sg-yyyyy">
-            <small>Comma-separated list. Leave empty to create a default SG</small>
-        </div>
-
-        <div class="form-group">
-            <label for="key_pair_name">EC2 Key Pair Name</label>
-            <input type="text" id="key_pair_name" name="key_pair_name">
-            <small>Optional. Leave empty for SSM-only access</small>
+            <div class="form-group">
+                <label for="key_pair_name">EC2 Key Pair Name</label>
+                <input type="text" id="key_pair_name" name="key_pair_name">
+                <small>Optional. Leave empty for SSM-only access</small>
+            </div>
         </div>
     </div>
 
     <!-- EC2 Configuration -->
     <div class="card">
-        <h3>EC2 Configuration</h3>
+        <h3 style="cursor: pointer; user-select: none;" onclick="toggleSection('ec2_config_content')">
+            <span id="ec2_config_toggle">▶</span> EC2 Configuration
+        </h3>
 
-        <div class="grid grid-2">
-            <div class="form-group">
-                <label for="instance_type">Instance Type *</label>
-                <select id="instance_type" name="instance_type" required>
-                    {% for instance_type in allowed_instance_types %}
-                    <option value="{{ instance_type }}" {% if instance_type == 't3.xlarge' %}selected{% endif %}>
-                        {{ instance_type }}
-                    </option>
-                    {% endfor %}
-                </select>
+        <div id="ec2_config_content" style="display: none;">
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label for="instance_type">Instance Type *</label>
+                    <select id="instance_type" name="instance_type" required>
+                        {% for instance_type in allowed_instance_types %}
+                        <option value="{{ instance_type }}" {% if instance_type == 't3.xlarge' %}selected{% endif %}>
+                            {{ instance_type }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="volume_size_gb">Volume Size (GB) *</label>
+                    <input type="number" id="volume_size_gb" name="volume_size_gb" value="30" min="8" max="1000" required>
+                </div>
             </div>
 
             <div class="form-group">
-                <label for="volume_size_gb">Volume Size (GB) *</label>
-                <input type="number" id="volume_size_gb" name="volume_size_gb" value="30" min="8" max="1000" required>
+                <label for="tags">Tags (JSON)</label>
+                <textarea id="tags" name="tags" rows="3" placeholder='{"Environment": "dev", "Project": "demo"}'></textarea>
+                <small>Optional resource tags as JSON</small>
             </div>
-        </div>
-
-        <div class="form-group">
-            <label for="ami_id">AMI ID</label>
-            <input type="text" id="ami_id" name="ami_id" placeholder="ami-xxxxx">
-            <small>Leave empty for latest Amazon Linux 2023</small>
-        </div>
-
-        <div class="form-group" id="cached_ami_option" style="display: none;">
-            <label>
-                <input type="checkbox" id="use_cached_ami" name="use_cached_ami" onchange="toggleAmiField()">
-                Use Cached Kamiwaza AMI
-            </label>
-            <small>If checked, will use a pre-built Kamiwaza AMI for faster deployment (overrides manual AMI ID)</small>
-        </div>
-
-        <div class="form-group">
-            <label for="tags">Tags (JSON)</label>
-            <textarea id="tags" name="tags" rows="3" placeholder='{"Environment": "dev", "Project": "demo"}'></textarea>
-            <small>Optional resource tags as JSON</small>
         </div>
     </div>
 
@@ -222,6 +231,20 @@ user2@example.com</pre>
 </form>
 
 <script>
+// Toggle collapsible sections
+function toggleSection(contentId) {
+    const content = document.getElementById(contentId);
+    const toggle = document.getElementById(contentId.replace('_content', '_toggle'));
+
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        toggle.textContent = '▼';
+    } else {
+        content.style.display = 'none';
+        toggle.textContent = '▶';
+    }
+}
+
 // Toggle deployment-specific fields based on deployment type
 function toggleDeploymentFields() {
     const deploymentType = document.getElementById('deployment_type').value;
@@ -236,8 +259,11 @@ function toggleDeploymentFields() {
     document.getElementById('deployment_info_docker').style.display = isKamiwaza ? 'none' : 'block';
     document.getElementById('deployment_info_kamiwaza').style.display = isKamiwaza ? 'block' : 'none';
 
-    // Show/hide cached AMI option (only for Kamiwaza deployments)
-    document.getElementById('cached_ami_option').style.display = isKamiwaza ? 'block' : 'none';
+    // Fetch cached AMIs for Kamiwaza deployments
+    if (isKamiwaza) {
+        const region = document.getElementById('aws_region').value;
+        fetchCachedAmis(region);
+    }
 
     // Update instance type recommendations
     const instanceTypeSelect = document.getElementById('instance_type');
@@ -273,18 +299,43 @@ function toggleCustomBranch() {
     // Function kept for backward compatibility but no longer used
 }
 
-// Toggle AMI ID field based on cached AMI checkbox
-function toggleAmiField() {
-    const useCachedAmi = document.getElementById('use_cached_ami').checked;
-    const amiIdField = document.getElementById('ami_id');
+// Fetch cached AMIs for a region and populate dropdown
+async function fetchCachedAmis(region) {
+    try {
+        const response = await fetch(`/api/cached-ami?region=${region}`);
+        const data = await response.json();
 
-    if (useCachedAmi) {
-        amiIdField.disabled = true;
-        amiIdField.placeholder = 'Will auto-select latest cached Kamiwaza AMI';
-        amiIdField.value = '';
-    } else {
-        amiIdField.disabled = false;
-        amiIdField.placeholder = 'ami-xxxxx';
+        const amiSelect = document.getElementById('ami_id');
+        const deploymentType = document.getElementById('deployment_type').value;
+
+        if (deploymentType === 'kamiwaza') {
+            // Clear existing options except the first (default Ubuntu)
+            while (amiSelect.options.length > 1) {
+                amiSelect.remove(1);
+            }
+
+            // Add AMI options if available
+            if (data.success && data.amis && data.amis.length > 0) {
+                data.amis.forEach(ami => {
+                    const option = document.createElement('option');
+                    option.value = ami.ami_id;
+                    option.textContent = `${ami.ami_id} - ${ami.name} (v${ami.version})`;
+                    amiSelect.appendChild(option);
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching cached AMIs:', error);
+    }
+}
+
+// Handle region change
+function onRegionChange() {
+    const region = document.getElementById('aws_region').value;
+    const deploymentType = document.getElementById('deployment_type').value;
+
+    if (deploymentType === 'kamiwaza') {
+        fetchCachedAmis(region);
     }
 }
 
@@ -299,6 +350,12 @@ function validateForm(event) {
 document.addEventListener('DOMContentLoaded', function() {
     toggleDeploymentFields();
     toggleCustomBranch();
+
+    // Add region change listener
+    const regionSelect = document.getElementById('aws_region');
+    if (regionSelect) {
+        regionSelect.addEventListener('change', onRegionChange);
+    }
 
     // Add form validation
     const form = document.querySelector('form');

@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # Kamiwaza Package
     kamiwaza_package_url: str = "https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb"
 
+    # App Garden & Toolshed
+    app_garden_url: str = "https://dev-info.kamiwaza.ai/garden/v2/apps.json"
+
     # Script Paths
     kamiwaza_provision_script: str = "/Users/steffenmerten/Code/kamiwaza/scripts/provision_users.py"
     kaizen_source: str = "/Users/steffenmerten/Code/kaizen-v3/apps/kaizenv3"

@@ -265,8 +265,12 @@ def execute_cdk_provisioning(job: Job, db, log_message):
         # Send success email
         send_completion_email(job, db)
 
-        # For Kamiwaza deployments, start readiness check
+        # For Kamiwaza deployments, start log streaming and readiness check
         if job.deployment_type == "kamiwaza":
+            log_message("info", "Starting Kamiwaza log streaming...")
+            # Start streaming logs immediately (iteration 0)
+            stream_kamiwaza_logs.apply_async(args=[job.id, job.instance_id, job.aws_region, 0], countdown=30)
+
             log_message("info", "Starting Kamiwaza readiness checks (will begin in 3 minutes)...")
             # Schedule first check in 3 minutes to give Kamiwaza time to start
             # The deployment script already waits ~5 minutes for services to initialize
@@ -430,8 +434,13 @@ def generate_kamiwaza_user_data(job: Job, db) -> str:
 
     deployment_script = script_path.read_text()
 
-    # Get package URL from settings
-    package_url = os.environ.get("KAMIWAZA_PACKAGE_URL", "https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb")
+    # Get package URL - check job tags first, then fall back to environment
+    package_url = None
+    if job.tags and isinstance(job.tags, dict):
+        package_url = job.tags.get("PackageURL")
+
+    if not package_url:
+        package_url = os.environ.get("KAMIWAZA_PACKAGE_URL", "https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb")
 
     # Get deployment mode from job (defaults to 'full' for backward compatibility)
     deployment_mode = getattr(job, 'kamiwaza_deployment_mode', 'full') or 'full'
@@ -680,9 +689,34 @@ def execute_kamiwaza_provisioning(self, job_id: int):
 
         # Update job status
         if success:
-            job.status = "success"
-            job.completed_at = datetime.utcnow()
-            log_message("info", "✓ Provisioning completed successfully")
+            # User provisioning succeeded, now hydrate apps and tools
+            log_message("info", "✓ User provisioning completed successfully")
+            log_message("info", "")
+            log_message("info", "Starting app and tool hydration...")
+
+            try:
+                from app.kamiwaza_app_hydrator import KamiwazaAppHydrator
+
+                hydrator = KamiwazaAppHydrator()
+                hydration_success, hydration_summary, hydration_logs = hydrator.hydrate_apps_and_tools(
+                    callback=lambda line: log_message("info", line)
+                )
+
+                if hydration_success:
+                    log_message("info", "✓ App and tool hydration completed successfully")
+                    job.status = "success"
+                    job.completed_at = datetime.utcnow()
+                else:
+                    log_message("warning", f"⚠ App hydration failed: {hydration_summary}")
+                    log_message("warning", "User provisioning succeeded but app hydration failed")
+                    job.status = "success"  # Still mark as success since users were created
+                    job.completed_at = datetime.utcnow()
+
+            except Exception as hydration_error:
+                log_message("error", f"✗ App hydration error: {str(hydration_error)}")
+                log_message("warning", "User provisioning succeeded but app hydration encountered an error")
+                job.status = "success"  # Still mark as success since users were created
+                job.completed_at = datetime.utcnow()
         else:
             job.status = "failed"
             job.error_message = summary
@@ -704,6 +738,359 @@ def execute_kamiwaza_provisioning(self, job_id: int):
 
     finally:
         db.close()
+
+
+# ============================================================================
+# KAMIWAZA LOG STREAMING TASK
+# ============================================================================
+
+@celery_app.task(bind=True, name='worker.tasks.stream_kamiwaza_logs')
+def stream_kamiwaza_logs(self, job_id: int, instance_id: str, region: str, iteration: int = 0):
+    """
+    Stream Kamiwaza deployment and startup logs from EC2 instance using SSM.
+    This task streams logs in real-time and reschedules itself until deployment is complete.
+    """
+    import time
+    import hashlib
+
+    db = SessionLocal()
+
+    try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            logger.error(f"Job {job_id} not found for log streaming")
+            return
+
+        # Stop streaming if Kamiwaza is ready
+        if job.kamiwaza_ready:
+            logger.info(f"Job {job_id} Kamiwaza is ready, stopping log stream")
+            return
+
+        def log_message(level: str, message: str):
+            """Helper to log messages"""
+            log = JobLog(
+                job_id=job.id,
+                level=level,
+                message=message,
+                source="kamiwaza-logs"
+            )
+            db.add(log)
+            db.commit()
+
+        # Get AWS credentials
+        from app.aws_cdk_provisioner import AWSCDKProvisioner
+        provisioner = AWSCDKProvisioner()
+
+        auth_method = os.environ.get("AWS_AUTH_METHOD", "access_keys")
+        credentials = None
+
+        try:
+            if auth_method == "assume_role":
+                role_arn = os.environ.get("AWS_ASSUME_ROLE_ARN")
+                external_id = os.environ.get("AWS_EXTERNAL_ID")
+                session_name = os.environ.get("AWS_SESSION_NAME", "kamiwaza-provisioner")
+
+                if not role_arn:
+                    raise Exception("AWS_ASSUME_ROLE_ARN not configured")
+
+                credentials = provisioner.assume_role(
+                    role_arn=role_arn,
+                    session_name=session_name,
+                    external_id=external_id,
+                    region=region
+                )
+            elif auth_method == "access_keys":
+                access_key = os.environ.get("AWS_ACCESS_KEY_ID")
+                secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+
+                if not access_key or not secret_key:
+                    raise Exception("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY not configured")
+
+                credentials = {
+                    'access_key': access_key,
+                    'secret_key': secret_key,
+                    'region': region
+                }
+        except Exception as e:
+            logger.error(f"Failed to get AWS credentials for log streaming: {str(e)}")
+            return
+
+        # Create SSM client
+        ssm_client = boto3.client(
+            'ssm',
+            region_name=region,
+            aws_access_key_id=credentials.get('access_key'),
+            aws_secret_access_key=credentials.get('secret_key'),
+            aws_session_token=credentials.get('session_token')
+        )
+
+        # Check if this is the first run
+        if iteration == 0:
+            log_message("info", "")
+            log_message("info", "=" * 60)
+            log_message("info", "KAMIWAZA INSTALLATION LOGS (Real-time Stream)")
+            log_message("info", "=" * 60)
+            log_message("info", "Waiting for instance to become available...")
+            time.sleep(5)  # Give instance time to start
+
+        # Create marker file to track what we've already logged
+        marker_file = f"/tmp/kamiwaza-log-marker-{job_id}"
+
+        # Send command to get new logs since last check
+        command = f"""
+# Initialize line counter file if it doesn't exist
+if [ ! -f {marker_file} ]; then
+    echo "0" > {marker_file}
+fi
+
+LAST_LINE=$(cat {marker_file})
+
+# Get deployment log (only new lines)
+if [ -f /var/log/kamiwaza-deployment.log ]; then
+    LINE_COUNT=$(wc -l < /var/log/kamiwaza-deployment.log 2>/dev/null || echo "0")
+    if [ "$LINE_COUNT" -gt "$LAST_LINE" ]; then
+        tail -n +$((LAST_LINE + 1)) /var/log/kamiwaza-deployment.log 2>/dev/null || true
+        echo "$LINE_COUNT" > {marker_file}
+    fi
+fi
+
+# Also show last 5 lines of startup log for status updates
+if [ -f /var/log/kamiwaza-startup.log ]; then
+    echo ""
+    echo "--- Latest from startup log ---"
+    tail -n 5 /var/log/kamiwaza-startup.log 2>/dev/null || true
+fi
+
+# Show kamiwaza status every 10 iterations (5 minutes)
+if [ $((iteration % 10)) -eq 0 ] && command -v kamiwaza &> /dev/null; then
+    echo ""
+    echo "--- Kamiwaza Status ---"
+    sudo -u ubuntu kamiwaza status 2>/dev/null || echo "Status not available yet"
+fi
+"""
+
+        try:
+            response = ssm_client.send_command(
+                InstanceIds=[instance_id],
+                DocumentName='AWS-RunShellScript',
+                Parameters={'commands': [command.replace('iteration', str(iteration))]},
+                TimeoutSeconds=30
+            )
+
+            command_id = response['Command']['CommandId']
+
+            # Wait for command to complete
+            max_wait = 20
+            waited = 0
+            output = None
+
+            while waited < max_wait:
+                time.sleep(2)
+                waited += 2
+
+                try:
+                    output = ssm_client.get_command_invocation(
+                        CommandId=command_id,
+                        InstanceId=instance_id
+                    )
+
+                    if output['Status'] in ['Success', 'Failed', 'Cancelled', 'TimedOut']:
+                        break
+                except ssm_client.exceptions.InvocationDoesNotExist:
+                    continue
+
+            # Get the output
+            if output and output['Status'] == 'Success':
+                log_content = output.get('StandardOutputContent', '')
+
+                if log_content.strip():
+                    # Split into lines and log each
+                    lines = log_content.strip().split('\n')
+
+                    for line in lines:
+                        if line.strip():
+                            log_message("info", line.strip())
+
+            # Check for errors
+            if output and output.get('StandardErrorContent'):
+                error_content = output['StandardErrorContent'].strip()
+                if error_content and 'No such file' not in error_content:
+                    if iteration == 0:
+                        log_message("info", "Waiting for Kamiwaza installation to begin...")
+
+        except ssm_client.exceptions.InvalidInstanceId:
+            if iteration == 0:
+                log_message("info", "Waiting for SSM agent to become available...")
+        except ClientError as e:
+            if 'TargetNotConnected' in str(e):
+                if iteration == 0:
+                    log_message("info", "Instance is starting up, SSM agent not yet available...")
+            else:
+                logger.warning(f"SSM error for job {job_id}: {str(e)}")
+        except Exception as e:
+            # Only log if it's not a common "not ready yet" error
+            if 'TargetNotConnected' not in str(e) and 'InvalidInstanceId' not in str(e):
+                logger.warning(f"Error streaming logs for job {job_id}: {str(e)}")
+
+        # Schedule next log fetch (every 30 seconds) if not ready yet
+        if not job.kamiwaza_ready:
+            # Continue streaming for up to 40 minutes (80 iterations * 30 seconds)
+            MAX_ITERATIONS = 80
+            if iteration < MAX_ITERATIONS:
+                stream_kamiwaza_logs.apply_async(
+                    args=[job_id, instance_id, region, iteration + 1],
+                    countdown=30
+                )
+            else:
+                log_message("info", "")
+                log_message("info", "Log streaming stopped (timeout reached after 40 minutes)")
+                log_message("info", "Kamiwaza may still be installing. Check the readiness status or connect to the instance directly.")
+
+    except Exception as e:
+        logger.error(f"Critical error in log streaming for job {job_id}: {str(e)}", exc_info=True)
+
+    finally:
+        db.close()
+
+
+# ============================================================================
+# KAMIWAZA DEBUGGING HELPER
+# ============================================================================
+
+def log_kamiwaza_debug_info(job_id: int, instance_id: str, region: str, db):
+    """
+    Collect debugging information from Kamiwaza instance when readiness checks fail.
+    """
+    def log_message(level: str, message: str):
+        log = JobLog(
+            job_id=job_id,
+            level=level,
+            message=message,
+            source="debug"
+        )
+        db.add(log)
+        db.commit()
+
+    log_message("info", "=" * 60)
+    log_message("info", "COLLECTING DEBUG INFORMATION")
+    log_message("info", "=" * 60)
+
+    try:
+        # Get AWS credentials
+        from app.aws_cdk_provisioner import AWSCDKProvisioner
+        provisioner = AWSCDKProvisioner()
+
+        auth_method = os.environ.get("AWS_AUTH_METHOD", "access_keys")
+        credentials = None
+
+        if auth_method == "assume_role":
+            role_arn = os.environ.get("AWS_ASSUME_ROLE_ARN")
+            external_id = os.environ.get("AWS_EXTERNAL_ID")
+            session_name = os.environ.get("AWS_SESSION_NAME", "kamiwaza-provisioner")
+
+            if not role_arn:
+                raise Exception("AWS_ASSUME_ROLE_ARN not configured")
+
+            credentials = provisioner.assume_role(
+                role_arn=role_arn,
+                session_name=session_name,
+                external_id=external_id,
+                region=region
+            )
+        elif auth_method == "access_keys":
+            access_key = os.environ.get("AWS_ACCESS_KEY_ID")
+            secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+
+            if not access_key or not secret_key:
+                raise Exception("AWS credentials not configured")
+
+            credentials = {
+                'access_key': access_key,
+                'secret_key': secret_key,
+                'region': region
+            }
+
+        # Create SSM client
+        ssm_client = boto3.client(
+            'ssm',
+            region_name=region,
+            aws_access_key_id=credentials.get('access_key'),
+            aws_secret_access_key=credentials.get('secret_key'),
+            aws_session_token=credentials.get('session_token')
+        )
+
+        # Collect debugging information
+        debug_command = """
+echo "=== Kamiwaza Status ==="
+sudo -u ubuntu kamiwaza status 2>&1 || echo "kamiwaza status failed"
+
+echo ""
+echo "=== Docker Containers ==="
+docker ps -a 2>&1 || echo "docker ps failed"
+
+echo ""
+echo "=== Last 20 lines of deployment log ==="
+tail -n 20 /var/log/kamiwaza-deployment.log 2>&1 || echo "No deployment log"
+
+echo ""
+echo "=== Last 20 lines of startup log ==="
+tail -n 20 /var/log/kamiwaza-startup.log 2>&1 || echo "No startup log"
+
+echo ""
+echo "=== Port 443 Status ==="
+ss -tlnp | grep :443 2>&1 || echo "Port 443 not listening"
+
+echo ""
+echo "=== Disk Space ==="
+df -h / 2>&1
+
+echo ""
+echo "=== Memory Usage ==="
+free -h 2>&1
+"""
+
+        response = ssm_client.send_command(
+            InstanceIds=[instance_id],
+            DocumentName='AWS-RunShellScript',
+            Parameters={'commands': [debug_command]},
+            TimeoutSeconds=60
+        )
+
+        command_id = response['Command']['CommandId']
+
+        # Wait for command to complete
+        import time
+        max_wait = 30
+        waited = 0
+
+        while waited < max_wait:
+            time.sleep(2)
+            waited += 2
+
+            try:
+                output = ssm_client.get_command_invocation(
+                    CommandId=command_id,
+                    InstanceId=instance_id
+                )
+
+                if output['Status'] in ['Success', 'Failed', 'Cancelled', 'TimedOut']:
+                    break
+            except ssm_client.exceptions.InvocationDoesNotExist:
+                continue
+
+        if output['Status'] == 'Success':
+            log_content = output.get('StandardOutputContent', '')
+            if log_content.strip():
+                for line in log_content.strip().split('\n'):
+                    if line.strip():
+                        log_message("info", line.strip())
+        else:
+            log_message("warning", f"Debug command status: {output['Status']}")
+
+        log_message("info", "=" * 60)
+
+    except Exception as e:
+        log_message("error", f"Failed to collect debug info: {str(e)}")
 
 
 # ============================================================================
@@ -839,8 +1226,8 @@ def check_kamiwaza_readiness(self, job_id: int):
         db.add(log)
         db.commit()
 
-        # Schedule another check if we haven't exceeded max attempts (120 attempts = 1 hour)
-        MAX_ATTEMPTS = 120
+        # Schedule another check if we haven't exceeded max attempts (180 attempts = 1.5 hours)
+        MAX_ATTEMPTS = 180
         if job.kamiwaza_check_attempts < MAX_ATTEMPTS:
             # Schedule another check in 30 seconds
             check_kamiwaza_readiness.apply_async(args=[job_id], countdown=30)
@@ -849,11 +1236,17 @@ def check_kamiwaza_readiness(self, job_id: int):
             log = JobLog(
                 job_id=job.id,
                 level="warning",
-                message=f"⚠ Kamiwaza readiness checks timed out after {MAX_ATTEMPTS} attempts (~1 hour). Last error: {error_details or 'Unknown'}. The deployment may still be in progress. Check https://{job.public_ip} manually.",
+                message=f"⚠ Kamiwaza readiness checks timed out after {MAX_ATTEMPTS} attempts (~1.5 hours). Last error: {error_details or 'Unknown'}. The deployment may still be in progress. Check https://{job.public_ip} manually.",
                 source="readiness-check"
             )
             db.add(log)
             db.commit()
+
+            # Log debugging information via SSM if possible
+            try:
+                log_kamiwaza_debug_info(job_id, job.instance_id, region, db)
+            except Exception as e:
+                logger.error(f"Failed to collect debug info for job {job_id}: {e}")
 
     except Exception as e:
         logger.error(f"Error in readiness check for job {job_id}: {str(e)}", exc_info=True)
