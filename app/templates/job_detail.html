@@ -78,6 +78,51 @@
                 {% endif %}
             </div>
         </div>
+
+        <!-- Apps & Tools Management -->
+        <div class="card">
+            <h3>🛠️ Apps & Tools</h3>
+            <p>Deploy applications and tools to your Kamiwaza instance from the App Garden.</p>
+
+            <div id="apps-loading" style="text-align: center; padding: 2rem;">
+                <div style="font-size: 2rem;">⏳</div>
+                <p>Loading available apps...</p>
+            </div>
+
+            <div id="apps-error" class="alert alert-error" style="display: none; margin-top: 1rem;"></div>
+
+            <div id="apps-container" style="display: none;">
+                <!-- Filter/Search -->
+                <div style="margin-bottom: 1rem;">
+                    <input type="text" id="app-search" placeholder="🔍 Search apps..."
+                           style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid #ddd;"
+                           onkeyup="filterApps()">
+                </div>
+
+                <!-- Apps Grid -->
+                <div id="apps-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                    <!-- Apps will be loaded here -->
+                </div>
+
+                <!-- Deploy Button -->
+                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #ddd;">
+                    <p id="selected-count" style="margin-bottom: 0.5rem; color: #666;">
+                        <strong>Selected:</strong> 0 apps
+                    </p>
+                    <button id="deploy-btn" onclick="deploySelectedApps()" class="btn btn-primary" style="margin-right: 0.5rem;" disabled>
+                        🚀 Deploy Selected Apps
+                    </button>
+                    <button onclick="selectAllApps()" class="btn btn-secondary" style="margin-right: 0.5rem;">
+                        ✓ Select All
+                    </button>
+                    <button onclick="deselectAllApps()" class="btn btn-secondary">
+                        ✗ Deselect All
+                    </button>
+                </div>
+
+                <div id="deploy-status" style="margin-top: 1rem; display: none;"></div>
+            </div>
+        </div>
     {% else %}
         <!-- Kamiwaza is still deploying -->
         <div class="card" style="background: #fff3cd; border-left: 4px solid #ffc107;">
@@ -383,5 +428,200 @@ function confirmDestroyStack() {
         button.disabled = false;
     });
 }
+
+// Apps & Tools Management
+{% if job.kamiwaza_ready %}
+const csrfToken = "{{ csrf_token }}";
+let availableApps = [];
+let selectedApps = new Set();
+
+// Load apps on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadAvailableApps();
+});
+
+async function loadAvailableApps() {
+    const loading = document.getElementById('apps-loading');
+    const error = document.getElementById('apps-error');
+    const container = document.getElementById('apps-container');
+
+    try {
+        const response = await fetch('/api/jobs/{{ job.id }}/available-apps');
+        const data = await response.json();
+
+        loading.style.display = 'none';
+
+        if (!data.success) {
+            error.textContent = data.error;
+            error.style.display = 'block';
+            return;
+        }
+
+        availableApps = data.apps;
+        renderApps();
+        container.style.display = 'block';
+
+    } catch (err) {
+        loading.style.display = 'none';
+        error.textContent = 'Error loading apps: ' + err.message;
+        error.style.display = 'block';
+    }
+}
+
+function renderApps(filterText = '') {
+    const grid = document.getElementById('apps-grid');
+    const filtered = filterText
+        ? availableApps.filter(app =>
+            app.name.toLowerCase().includes(filterText.toLowerCase()) ||
+            app.description.toLowerCase().includes(filterText.toLowerCase()) ||
+            app.tags.some(tag => tag.toLowerCase().includes(filterText.toLowerCase()))
+        )
+        : availableApps;
+
+    grid.innerHTML = filtered.map(app => {
+        const isSelected = selectedApps.has(app.name);
+        const riskColor = app.risk_tier === 0 ? '#4caf50' : app.risk_tier <= 2 ? '#ff9800' : '#f44336';
+
+        return `
+            <div class="app-card" style="border: 2px solid ${isSelected ? '#ff9900' : '#ddd'}; border-radius: 8px; padding: 1rem; background: ${isSelected ? '#fff8e1' : 'white'}; cursor: pointer; transition: all 0.2s;"
+                 onclick="toggleApp('${app.name}')">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                    <div style="flex: 1;">
+                        <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 0.25rem;">
+                            ${isSelected ? '✓ ' : ''}${app.name}
+                        </div>
+                        <div style="font-size: 0.85rem; color: #666;">
+                            v${app.version}
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-end;">
+                        ${app.verified ? '<span style="background: #4caf50; color: white; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.7rem;">✓ VERIFIED</span>' : ''}
+                        <span style="background: ${riskColor}; color: white; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.7rem;">
+                            RISK ${app.risk_tier}
+                        </span>
+                    </div>
+                </div>
+                <div style="font-size: 0.9rem; color: #444; margin-bottom: 0.5rem;">
+                    ${app.description || 'No description'}
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">
+                    ${app.tags.map(tag => `<span style="background: #e0e0e0; color: #333; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.75rem;">${tag}</span>`).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    updateSelectedCount();
+}
+
+function toggleApp(appName) {
+    if (selectedApps.has(appName)) {
+        selectedApps.delete(appName);
+    } else {
+        selectedApps.add(appName);
+    }
+    renderApps(document.getElementById('app-search').value);
+}
+
+function selectAllApps() {
+    availableApps.forEach(app => selectedApps.add(app.name));
+    renderApps(document.getElementById('app-search').value);
+}
+
+function deselectAllApps() {
+    selectedApps.clear();
+    renderApps(document.getElementById('app-search').value);
+}
+
+function filterApps() {
+    const searchText = document.getElementById('app-search').value;
+    renderApps(searchText);
+}
+
+function updateSelectedCount() {
+    const countEl = document.getElementById('selected-count');
+    const deployBtn = document.getElementById('deploy-btn');
+
+    countEl.innerHTML = `<strong>Selected:</strong> ${selectedApps.size} apps`;
+    deployBtn.disabled = selectedApps.size === 0;
+}
+
+async function deploySelectedApps() {
+    if (selectedApps.size === 0) {
+        alert('Please select at least one app to deploy');
+        return;
+    }
+
+    const deployBtn = document.getElementById('deploy-btn');
+    const statusDiv = document.getElementById('deploy-status');
+
+    if (!confirm(`Deploy ${selectedApps.size} app(s) to Kamiwaza?\n\nSelected apps:\n${Array.from(selectedApps).join('\n')}`)) {
+        return;
+    }
+
+    deployBtn.disabled = true;
+    deployBtn.textContent = '🔄 Deploying...';
+    statusDiv.style.display = 'block';
+    statusDiv.innerHTML = '<div style="color: #ff9900;">⏳ Deploying apps to Kamiwaza...</div>';
+
+    try {
+        const response = await fetch('/api/jobs/{{ job.id }}/deploy-apps', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                csrf_token: csrfToken,
+                app_names: Array.from(selectedApps)
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            let message = `<div style="color: #4caf50; font-weight: bold;">✓ Deployment Complete!</div>`;
+            message += `<div style="margin-top: 0.5rem;">`;
+            message += `<strong>Successfully deployed:</strong> ${data.deployed_count} app(s)<br>`;
+
+            if (data.deployed.length > 0) {
+                message += `<ul style="margin: 0.5rem 0; padding-left: 1.5rem;">`;
+                data.deployed.forEach(app => {
+                    message += `<li style="color: #4caf50;">✓ ${app}</li>`;
+                });
+                message += `</ul>`;
+            }
+
+            if (data.failed.length > 0) {
+                message += `<strong style="color: #f44336;">Failed:</strong> ${data.failed_count} app(s)<br>`;
+                message += `<ul style="margin: 0.5rem 0; padding-left: 1.5rem;">`;
+                data.failed.forEach(fail => {
+                    message += `<li style="color: #f44336;">✗ ${fail.name}: ${fail.error}</li>`;
+                });
+                message += `</ul>`;
+            }
+
+            message += `</div>`;
+            statusDiv.innerHTML = message;
+
+            // Clear selection
+            selectedApps.clear();
+            renderApps(document.getElementById('app-search').value);
+
+            // Scroll to status
+            statusDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+            statusDiv.innerHTML = `<div style="color: #f44336; font-weight: bold;">✗ Deployment Failed</div><div>${data.error}</div>`;
+        }
+
+        deployBtn.disabled = false;
+        deployBtn.textContent = '🚀 Deploy Selected Apps';
+
+    } catch (err) {
+        statusDiv.innerHTML = `<div style="color: #f44336; font-weight: bold;">✗ Error</div><div>${err.message}</div>`;
+        deployBtn.disabled = false;
+        deployBtn.textContent = '🚀 Deploy Selected Apps';
+    }
+}
+{% endif %}
 </script>
 {% endblock %}
