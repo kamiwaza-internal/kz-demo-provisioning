@@ -1,9 +1,0 @@
-{
-  "kamiwaza-job-25": {
-    "VpcId": "vpc-0d9ade44e1676cc09",
-    "InstanceId": "i-0a6abe60759a105dd",
-    "PublicIP": "100.53.105.192",
-    "PrivateIP": "10.0.10.140",
-    "SecurityGroupId": "sg-06f04b68a56d68c90"
-  }
-}
