@@ -197,13 +197,28 @@ def execute_cdk_provisioning(job: Job, db, log_message):
                 else:
                     log_message("warning", f"⚠️  VPC {reused_vpc_id} from job #{recent_job.id} no longer exists, will create new VPC")
 
+    # Auto-select cached AMI if requested
+    ami_id_to_use = job.ami_id
+    if job.use_cached_ami and not job.ami_id and job.deployment_type == "kamiwaza":
+        log_message("info", "Searching for cached Kamiwaza AMI...")
+        version = job.kamiwaza_branch or "release/0.9.2"
+        cached_ami_id = check_ami_exists_for_version(version, job.aws_region, credentials)
+        if cached_ami_id:
+            ami_id_to_use = cached_ami_id
+            log_message("info", f"✓ Found cached AMI: {cached_ami_id} for version {version}")
+            # Update job with the selected AMI
+            job.ami_id = cached_ami_id
+            db.commit()
+        else:
+            log_message("warning", f"⚠️  No cached AMI found for version {version}, will use default AMI and full installation")
+
     # Generate user data script
     user_data_script = generate_user_data_script(job, db)
     user_data_b64 = base64.b64encode(user_data_script.encode()).decode()
 
     instance_config = {
         'instance_type': job.instance_type,
-        'ami_id': job.ami_id,
+        'ami_id': ami_id_to_use,
         'vpc_id': job.vpc_id,
         'subnet_id': job.subnet_id,
         'security_group_ids': job.security_group_ids,
@@ -252,9 +267,11 @@ def execute_cdk_provisioning(job: Job, db, log_message):
 
         # For Kamiwaza deployments, start readiness check
         if job.deployment_type == "kamiwaza":
-            log_message("info", "Starting Kamiwaza readiness checks...")
-            # Schedule first check in 60 seconds to give Kamiwaza time to start
-            check_kamiwaza_readiness.apply_async(args=[job.id], countdown=60)
+            log_message("info", "Starting Kamiwaza readiness checks (will begin in 3 minutes)...")
+            # Schedule first check in 3 minutes to give Kamiwaza time to start
+            # The deployment script already waits ~5 minutes for services to initialize
+            # But HTTPS endpoint may take additional time to become accessible
+            check_kamiwaza_readiness.apply_async(args=[job.id], countdown=180)
 
     else:
         raise Exception("CDK deployment failed - see logs for details")
@@ -702,6 +719,7 @@ def check_kamiwaza_readiness(self, job_id: int):
     import ssl
     import urllib.request
     import urllib.error
+    import socket
 
     db = SessionLocal()
 
@@ -736,6 +754,7 @@ def check_kamiwaza_readiness(self, job_id: int):
 
         # Try to access the login page
         url = f"https://{job.public_ip}"
+        error_details = None
 
         # Create SSL context that doesn't verify certificates (self-signed cert)
         ssl_context = ssl.create_default_context()
@@ -771,34 +790,57 @@ def check_kamiwaza_readiness(self, job_id: int):
                             logger.info(f"Triggering automatic AMI creation for job {job_id}")
                             job.ami_creation_status = "pending"
                             db.commit()
-                            # Schedule AMI creation in 30 seconds to allow final setup
-                            create_ami_after_deployment.apply_async(args=[job_id], countdown=30)
+                            # Schedule AMI creation in 2 minutes to allow final setup
+                            create_ami_after_deployment.apply_async(args=[job_id], countdown=120)
 
                         return
                     else:
-                        logger.info(f"Got 200 but content doesn't look like Kamiwaza for job {job_id}")
+                        error_details = f"Got HTTP 200 but content doesn't look like Kamiwaza (content length: {len(content)} bytes)"
+                        logger.info(f"{error_details} for job {job_id}")
                 else:
-                    logger.info(f"Got status {status_code} for job {job_id}")
+                    error_details = f"Got HTTP {status_code}"
+                    logger.info(f"{error_details} for job {job_id}")
 
         except urllib.error.HTTPError as e:
-            logger.info(f"HTTP {e.code} when checking job {job_id}")
+            error_details = f"HTTP {e.code} error"
+            logger.info(f"{error_details} when checking job {job_id}")
         except urllib.error.URLError as e:
-            logger.info(f"Connection failed for job {job_id}: {e.reason}")
+            # More detailed error based on reason type
+            if isinstance(e.reason, socket.timeout):
+                error_details = "Connection timeout (10s) - service may still be starting"
+            elif isinstance(e.reason, socket.gaierror):
+                error_details = f"DNS resolution failed: {e.reason}"
+            elif isinstance(e.reason, ConnectionRefusedError):
+                error_details = "Connection refused - port 443 not accepting connections yet"
+            elif isinstance(e.reason, ssl.SSLError):
+                error_details = f"SSL error: {e.reason}"
+            else:
+                error_details = f"Connection failed: {e.reason}"
+            logger.info(f"{error_details} for job {job_id}")
+        except socket.timeout:
+            error_details = "Socket timeout - service not responding"
+            logger.info(f"{error_details} for job {job_id}")
         except Exception as e:
-            logger.info(f"Error checking job {job_id}: {type(e).__name__}: {str(e)}")
+            error_details = f"{type(e).__name__}: {str(e)}"
+            logger.warning(f"Unexpected error checking job {job_id}: {error_details}")
 
-        # Log check attempt
+        # Log check attempt with error details
+        if error_details:
+            message = f"Kamiwaza readiness check #{job.kamiwaza_check_attempts}: {error_details}"
+        else:
+            message = f"Kamiwaza readiness check #{job.kamiwaza_check_attempts}: Not yet accessible"
+
         log = JobLog(
             job_id=job.id,
             level="info",
-            message=f"Kamiwaza readiness check #{job.kamiwaza_check_attempts}: Not yet accessible (still deploying...)",
+            message=message,
             source="readiness-check"
         )
         db.add(log)
         db.commit()
 
-        # Schedule another check if we haven't exceeded max attempts (60 attempts = 30 minutes)
-        MAX_ATTEMPTS = 60
+        # Schedule another check if we haven't exceeded max attempts (120 attempts = 1 hour)
+        MAX_ATTEMPTS = 120
         if job.kamiwaza_check_attempts < MAX_ATTEMPTS:
             # Schedule another check in 30 seconds
             check_kamiwaza_readiness.apply_async(args=[job_id], countdown=30)
@@ -807,7 +849,7 @@ def check_kamiwaza_readiness(self, job_id: int):
             log = JobLog(
                 job_id=job.id,
                 level="warning",
-                message=f"⚠ Kamiwaza readiness checks timed out after {MAX_ATTEMPTS} attempts. The deployment may still be in progress. Check https://{job.public_ip} manually.",
+                message=f"⚠ Kamiwaza readiness checks timed out after {MAX_ATTEMPTS} attempts (~1 hour). Last error: {error_details or 'Unknown'}. The deployment may still be in progress. Check https://{job.public_ip} manually.",
                 source="readiness-check"
             )
             db.add(log)
@@ -815,6 +857,18 @@ def check_kamiwaza_readiness(self, job_id: int):
 
     except Exception as e:
         logger.error(f"Error in readiness check for job {job_id}: {str(e)}", exc_info=True)
+        # Log the critical error to the database
+        try:
+            log = JobLog(
+                job_id=job_id,
+                level="error",
+                message=f"Critical error in readiness check: {str(e)}",
+                source="readiness-check"
+            )
+            db.add(log)
+            db.commit()
+        except:
+            pass
 
     finally:
         db.close()

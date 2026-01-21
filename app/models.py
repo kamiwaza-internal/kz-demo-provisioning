@@ -38,6 +38,7 @@ class Job(Base):
     instance_type = Column(String(50), nullable=False)
     volume_size_gb = Column(Integer, default=30)
     ami_id = Column(String(100), nullable=True)
+    use_cached_ami = Column(Boolean, default=False)  # Whether to use cached Kamiwaza AMI
     tags = Column(JSON, nullable=True)  # Dict of tags
 
     # Docker Configuration

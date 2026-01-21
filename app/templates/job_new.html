@@ -161,6 +161,14 @@
             <small>Leave empty for latest Amazon Linux 2023</small>
         </div>
 
+        <div class="form-group" id="cached_ami_option" style="display: none;">
+            <label>
+                <input type="checkbox" id="use_cached_ami" name="use_cached_ami" onchange="toggleAmiField()">
+                Use Cached Kamiwaza AMI
+            </label>
+            <small>If checked, will use a pre-built Kamiwaza AMI for faster deployment (overrides manual AMI ID)</small>
+        </div>
+
         <div class="form-group">
             <label for="tags">Tags (JSON)</label>
             <textarea id="tags" name="tags" rows="3" placeholder='{"Environment": "dev", "Project": "demo"}'></textarea>
@@ -228,6 +236,9 @@ function toggleDeploymentFields() {
     document.getElementById('deployment_info_docker').style.display = isKamiwaza ? 'none' : 'block';
     document.getElementById('deployment_info_kamiwaza').style.display = isKamiwaza ? 'block' : 'none';
 
+    // Show/hide cached AMI option (only for Kamiwaza deployments)
+    document.getElementById('cached_ami_option').style.display = isKamiwaza ? 'block' : 'none';
+
     // Update instance type recommendations
     const instanceTypeSelect = document.getElementById('instance_type');
     const volumeSizeInput = document.getElementById('volume_size_gb');
@@ -260,6 +271,21 @@ function toggleDeploymentFields() {
 // Package URL is now configured globally in Settings
 function toggleCustomBranch() {
     // Function kept for backward compatibility but no longer used
+}
+
+// Toggle AMI ID field based on cached AMI checkbox
+function toggleAmiField() {
+    const useCachedAmi = document.getElementById('use_cached_ami').checked;
+    const amiIdField = document.getElementById('ami_id');
+
+    if (useCachedAmi) {
+        amiIdField.disabled = true;
+        amiIdField.placeholder = 'Will auto-select latest cached Kamiwaza AMI';
+        amiIdField.value = '';
+    } else {
+        amiIdField.disabled = false;
+        amiIdField.placeholder = 'ami-xxxxx';
+    }
 }
 
 // Form submission validation

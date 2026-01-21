@@ -108,22 +108,21 @@ fi
 log "✓ kamiwaza command found"
 
 # Run kamiwaza start with the specified deployment mode
+# Note: KAMIWAZA_MODE is the correct environment variable per Kamiwaza support
 if [ "$KAMIWAZA_DEPLOYMENT_MODE" = "lite" ]; then
     log "Running 'kamiwaza start' in LITE mode as user $KAMIWAZA_USER..."
-    export KAMIWAZA_LITE=true
-    export KAMIWAZA_USE_AUTH=false
+    export KAMIWAZA_MODE="lite"
 else
     log "Running 'kamiwaza start' in FULL mode as user $KAMIWAZA_USER..."
-    export KAMIWAZA_LITE=false
-    export KAMIWAZA_USE_AUTH=true
+    export KAMIWAZA_MODE="full"
 fi
 
 # Set environment variables for deployment mode
-# KAMIWAZA_LITE=true for lite mode, false for full stack
-# KAMIWAZA_USE_AUTH=true enables Keycloak authentication (full mode only)
+# KAMIWAZA_MODE="full" enables full stack deployment with Keycloak authentication
+# KAMIWAZA_MODE="lite" enables lightweight deployment without authentication
 # Using sudo -E to preserve environment variables
-log "Deployment mode: $KAMIWAZA_DEPLOYMENT_MODE (KAMIWAZA_LITE=$KAMIWAZA_LITE, KAMIWAZA_USE_AUTH=$KAMIWAZA_USE_AUTH)"
-sudo -E -u $KAMIWAZA_USER bash -c "kamiwaza start" 2>&1 | tee -a /var/log/kamiwaza-startup.log &
+log "Deployment mode: $KAMIWAZA_DEPLOYMENT_MODE (KAMIWAZA_MODE=$KAMIWAZA_MODE)"
+sudo -E -u $KAMIWAZA_USER bash -c "KAMIWAZA_MODE=$KAMIWAZA_MODE kamiwaza start" 2>&1 | tee -a /var/log/kamiwaza-startup.log &
 KAMIWAZA_PID=$!
 
 log "✓ Kamiwaza start command initiated (PID: $KAMIWAZA_PID)"
@@ -168,7 +167,7 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
     # Check for error state after first minute
     if [ $ELAPSED -ge 60 ] && check_for_errors; then
         log "⚠ Detected services in ERROR state, attempting restart..."
-        sudo -u $KAMIWAZA_USER bash -c "kamiwaza restart" 2>&1 | tee -a /var/log/kamiwaza-startup.log
+        sudo -E -u $KAMIWAZA_USER bash -c "KAMIWAZA_MODE=$KAMIWAZA_MODE kamiwaza restart" 2>&1 | tee -a /var/log/kamiwaza-startup.log
         sleep 30
     fi
 done
@@ -183,7 +182,7 @@ if [ "$FINAL_RUNNING" -lt 5 ]; then
     check_kamiwaza_status | tee -a /var/log/kamiwaza-deployment.log
     log ""
     log "Attempting one final restart to recover..."
-    sudo -u $KAMIWAZA_USER bash -c "kamiwaza restart" 2>&1 | tee -a /var/log/kamiwaza-startup.log
+    sudo -E -u $KAMIWAZA_USER bash -c "KAMIWAZA_MODE=$KAMIWAZA_MODE kamiwaza restart" 2>&1 | tee -a /var/log/kamiwaza-startup.log
     sleep 60
 
     FINAL_RUNNING=$(count_running_services)
@@ -208,7 +207,7 @@ log "=========================================="
 log "Kamiwaza Installation Completed!"
 log "=========================================="
 log ""
-log "Deployment Mode: $KAMIWAZA_DEPLOYMENT_MODE (KAMIWAZA_LITE=$KAMIWAZA_LITE)"
+log "Deployment Mode: $KAMIWAZA_DEPLOYMENT_MODE (KAMIWAZA_MODE=$KAMIWAZA_MODE)"
 log ""
 log "Service Status: $FINAL_RUNNING/5 services running"
 log ""

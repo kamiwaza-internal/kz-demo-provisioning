@@ -95,6 +95,7 @@ async def create_job(
     instance_type: str = Form(...),
     volume_size_gb: int = Form(30),
     ami_id: Optional[str] = Form(None),
+    use_cached_ami: Optional[bool] = Form(False),
     tags: Optional[str] = Form(None),
     dockerhub_images: Optional[str] = Form(None),
     requester_email: str = Form(...),
@@ -190,6 +191,7 @@ async def create_job(
             instance_type=job_data.instance_type,
             volume_size_gb=job_data.volume_size_gb,
             ami_id=job_data.ami_id,
+            use_cached_ami=use_cached_ami if deployment_type == "kamiwaza" else False,
             tags=job_data.tags,
             dockerhub_images=[c.model_dump() for c in job_data.dockerhub_images] if job_data.dockerhub_images else [],
             requester_email=job_data.requester_email
@@ -678,28 +680,29 @@ async def settings_page(
     """Display configuration settings page"""
     csrf_token = csrf_protection.generate_token()
 
-    # Read current configuration from settings
+    # Read current configuration from os.environ to get latest values
+    # This ensures we always show the most recently saved configuration
     config = {
-        "KAMIWAZA_URL": settings.kamiwaza_url,
-        "KAMIWAZA_USERNAME": settings.kamiwaza_username,
-        "KAMIWAZA_PASSWORD": settings.kamiwaza_password,
-        "KAMIWAZA_DB_PATH": settings.kamiwaza_db_path,
-        "KAMIWAZA_PACKAGE_URL": settings.kamiwaza_package_url,
-        "KAMIWAZA_PROVISION_SCRIPT": settings.kamiwaza_provision_script,
-        "KAIZEN_SOURCE": settings.kaizen_source,
-        "DEFAULT_USER_PASSWORD": settings.default_user_password,
-        "AWS_AUTH_METHOD": settings.aws_auth_method,
-        "AWS_ASSUME_ROLE_ARN": settings.aws_assume_role_arn,
-        "AWS_EXTERNAL_ID": settings.aws_external_id,
-        "AWS_SESSION_NAME": settings.aws_session_name,
-        "AWS_ACCESS_KEY_ID": settings.aws_access_key_id,
-        "AWS_SECRET_ACCESS_KEY": settings.aws_secret_access_key,
-        "AWS_SSO_PROFILE": settings.aws_sso_profile,
-        "AWS_PROVISIONING_METHOD": settings.aws_provisioning_method,
-        "ANTHROPIC_API_KEY": settings.anthropic_api_key,
-        "N2YO_API_KEY": settings.n2yo_api_key,
-        "DATALASTIC_API_KEY": settings.datalastic_api_key,
-        "FLIGHTRADAR24_API_KEY": settings.flightradar24_api_key,
+        "KAMIWAZA_URL": os.environ.get("KAMIWAZA_URL", settings.kamiwaza_url),
+        "KAMIWAZA_USERNAME": os.environ.get("KAMIWAZA_USERNAME", settings.kamiwaza_username),
+        "KAMIWAZA_PASSWORD": os.environ.get("KAMIWAZA_PASSWORD", settings.kamiwaza_password),
+        "KAMIWAZA_DB_PATH": os.environ.get("KAMIWAZA_DB_PATH", settings.kamiwaza_db_path),
+        "KAMIWAZA_PACKAGE_URL": os.environ.get("KAMIWAZA_PACKAGE_URL", settings.kamiwaza_package_url),
+        "KAMIWAZA_PROVISION_SCRIPT": os.environ.get("KAMIWAZA_PROVISION_SCRIPT", settings.kamiwaza_provision_script),
+        "KAIZEN_SOURCE": os.environ.get("KAIZEN_SOURCE", settings.kaizen_source),
+        "DEFAULT_USER_PASSWORD": os.environ.get("DEFAULT_USER_PASSWORD", settings.default_user_password),
+        "AWS_AUTH_METHOD": os.environ.get("AWS_AUTH_METHOD", settings.aws_auth_method),
+        "AWS_ASSUME_ROLE_ARN": os.environ.get("AWS_ASSUME_ROLE_ARN", settings.aws_assume_role_arn),
+        "AWS_EXTERNAL_ID": os.environ.get("AWS_EXTERNAL_ID", settings.aws_external_id),
+        "AWS_SESSION_NAME": os.environ.get("AWS_SESSION_NAME", settings.aws_session_name),
+        "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID", settings.aws_access_key_id),
+        "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY", settings.aws_secret_access_key),
+        "AWS_SSO_PROFILE": os.environ.get("AWS_SSO_PROFILE", settings.aws_sso_profile),
+        "AWS_PROVISIONING_METHOD": os.environ.get("AWS_PROVISIONING_METHOD", settings.aws_provisioning_method),
+        "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY", settings.anthropic_api_key),
+        "N2YO_API_KEY": os.environ.get("N2YO_API_KEY", settings.n2yo_api_key),
+        "DATALASTIC_API_KEY": os.environ.get("DATALASTIC_API_KEY", settings.datalastic_api_key),
+        "FLIGHTRADAR24_API_KEY": os.environ.get("FLIGHTRADAR24_API_KEY", settings.flightradar24_api_key),
     }
 
     # Check if base AWS credentials are available
