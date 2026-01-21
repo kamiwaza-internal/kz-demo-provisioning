@@ -8,6 +8,17 @@
     <p style="margin-top: 0.5rem; color: #666;">Upload a CSV to provision Kamiwaza users and deploy Kaizen instances</p>
 </div>
 
+<div class="card" style="border-left: 4px solid #2196F3; background: #E3F2FD;">
+    <h3 style="margin-top: 0; color: #1976D2;">🎯 Target Kamiwaza Instance</h3>
+    <div style="font-size: 1rem; margin-top: 0.5rem;">
+        <strong>URL:</strong> <code style="background: #fff; padding: 0.25rem 0.5rem; border-radius: 3px; font-size: 0.95rem;">{{ kamiwaza_url }}</code>
+    </div>
+    <div style="font-size: 0.9rem; margin-top: 0.75rem; color: #555;">
+        Users will be provisioned into this Kamiwaza instance. To change this, go to
+        <a href="/settings" style="color: #1976D2; text-decoration: underline;">Settings</a>.
+    </div>
+</div>
+
 <div class="card">
     <h3>Upload User CSV</h3>
 
@@ -23,6 +34,15 @@
 
     <form method="POST" action="/deployment-manager/provision" enctype="multipart/form-data" id="provisionForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <div class="form-group">
+            <label for="deployment_mode">Kamiwaza Deployment Mode *</label>
+            <select id="deployment_mode" name="deployment_mode" required>
+                <option value="lite">Lite - Lightweight deployment (recommended for demos)</option>
+                <option value="full">Full - Complete deployment with all services</option>
+            </select>
+            <small>Select whether to deploy Kamiwaza in lite or full mode on the EC2 instances</small>
+        </div>
 
         <div class="form-group">
             <label for="csv_file">User CSV File *</label>
@@ -201,7 +221,10 @@ function displayValidation(validation) {
 document.getElementById('provisionForm').addEventListener('submit', function(e) {
     const file = document.getElementById('csv_file').files[0];
     if (file) {
-        const confirmed = confirm('Are you sure you want to start provisioning users? This will create Kamiwaza users and deploy Kaizen instances.');
+        const kamiwazaUrl = '{{ kamiwaza_url }}';
+        const deploymentMode = document.getElementById('deployment_mode').value;
+        const modeName = deploymentMode === 'lite' ? 'Lite (recommended for demos)' : 'Full (complete deployment)';
+        const confirmed = confirm(`Are you sure you want to start provisioning users?\n\nTarget Kamiwaza: ${kamiwazaUrl}\nDeployment Mode: ${modeName}\n\nThis will create Kamiwaza users and deploy Kaizen instances.`);
         if (!confirmed) {
             e.preventDefault();
         }

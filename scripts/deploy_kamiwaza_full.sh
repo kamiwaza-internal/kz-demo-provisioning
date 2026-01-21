@@ -25,6 +25,7 @@ error() {
 # Configuration - can be overridden via environment variables
 KAMIWAZA_PACKAGE_URL="${KAMIWAZA_PACKAGE_URL:-https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb}"
 KAMIWAZA_USER="${KAMIWAZA_USER:-ubuntu}"
+KAMIWAZA_DEPLOYMENT_MODE="${KAMIWAZA_DEPLOYMENT_MODE:-full}"
 
 # Start deployment
 log "=========================================="
@@ -106,12 +107,23 @@ fi
 
 log "✓ kamiwaza command found"
 
-# Run kamiwaza start as the specified user with full mode configuration
-log "Running 'kamiwaza start' in FULL mode as user $KAMIWAZA_USER..."
+# Run kamiwaza start with the specified deployment mode
+if [ "$KAMIWAZA_DEPLOYMENT_MODE" = "lite" ]; then
+    log "Running 'kamiwaza start' in LITE mode as user $KAMIWAZA_USER..."
+    export KAMIWAZA_LITE=true
+    export KAMIWAZA_USE_AUTH=false
+else
+    log "Running 'kamiwaza start' in FULL mode as user $KAMIWAZA_USER..."
+    export KAMIWAZA_LITE=false
+    export KAMIWAZA_USE_AUTH=true
+fi
 
-# Set environment variables for full mode deployment
-# KAMIWAZA_LITE=false ensures we get the full stack (not lite mode)
-su - $KAMIWAZA_USER -c "export KAMIWAZA_LITE=false && kamiwaza start" 2>&1 | tee -a /var/log/kamiwaza-startup.log &
+# Set environment variables for deployment mode
+# KAMIWAZA_LITE=true for lite mode, false for full stack
+# KAMIWAZA_USE_AUTH=true enables Keycloak authentication (full mode only)
+# Using -E flag to preserve environment variables through su
+log "Deployment mode: $KAMIWAZA_DEPLOYMENT_MODE (KAMIWAZA_LITE=$KAMIWAZA_LITE, KAMIWAZA_USE_AUTH=$KAMIWAZA_USE_AUTH)"
+su -E $KAMIWAZA_USER -c "kamiwaza start" 2>&1 | tee -a /var/log/kamiwaza-startup.log &
 KAMIWAZA_PID=$!
 
 log "✓ Kamiwaza start command initiated (PID: $KAMIWAZA_PID)"

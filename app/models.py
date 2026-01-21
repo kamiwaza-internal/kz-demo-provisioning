@@ -18,6 +18,7 @@ class Job(Base):
     kamiwaza_branch = Column(String(255), default="release/0.9.2", nullable=True)
     kamiwaza_github_token = Column(String(500), nullable=True)
     kamiwaza_repo = Column(String(500), default="https://github.com/kamiwaza-internal/kamiwaza.git", nullable=True)
+    kamiwaza_deployment_mode = Column(String(20), default="lite", nullable=True)  # lite or full
 
     # AWS Configuration
     aws_region = Column(String(50), nullable=False)

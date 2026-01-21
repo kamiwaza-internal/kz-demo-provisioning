@@ -71,8 +71,39 @@ def check_prerequisites():
     return True
 
 
-def generate_user_data(package_url: str) -> str:
+def generate_user_data(package_url: str, use_cached_ami: bool = False) -> str:
     """Generate user data script"""
+
+    if use_cached_ami:
+        print("Using pre-configured AMI - minimal user data (Kamiwaza already installed)")
+        # Minimal user data for AMI-based deployments (Kamiwaza already installed)
+        user_data = """#!/bin/bash
+# Kamiwaza is pre-installed in this AMI
+# Just ensure it starts on boot
+
+set -euo pipefail
+
+log() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" | tee -a /var/log/kamiwaza-firstboot.log
+}
+
+log "=========================================="
+log "Kamiwaza First Boot (from cached AMI)"
+log "=========================================="
+
+# Start Kamiwaza (it's already installed)
+log "Starting Kamiwaza..."
+su - ubuntu -c "kamiwaza start" 2>&1 | tee -a /var/log/kamiwaza-startup.log &
+
+log "✓ Kamiwaza start initiated"
+log "This deployment used a pre-configured AMI (fast deployment)"
+log "Monitor startup: sudo tail -f /var/log/kamiwaza-startup.log"
+"""
+        user_data_b64 = base64.b64encode(user_data.encode()).decode()
+        print(f"✓ User data generated for AMI deployment ({len(user_data)} bytes)")
+        return user_data_b64
+
+    # Standard deployment with .deb package installation
     print(f"Generating user data for package: {package_url}")
 
     script_path = Path(__file__).parent / "scripts" / "deploy_kamiwaza_full.sh"
@@ -189,7 +220,8 @@ def deploy_with_cdk(
     subnet_id: str = None,
     role_arn: str = None,
     external_id: str = None,
-    skip_login_test: bool = False
+    skip_login_test: bool = False,
+    ami_id: str = None
 ):
     """Deploy using AWS CDK"""
     print("\nDeploying with AWS CDK...")
@@ -212,6 +244,9 @@ def deploy_with_cdk(
         context["vpcId"] = vpc_id
     if subnet_id:
         context["subnetId"] = subnet_id
+    if ami_id:
+        context["amiId"] = ami_id
+        print(f"Using custom AMI: {ami_id}")
 
     # Save context to file
     context_file = Path("cdk.context.json")
@@ -300,8 +335,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic deployment
+  # Basic deployment (fresh install - 30+ minutes)
   python3 deploy_kamiwaza.py --name kamiwaza-demo
+
+  # Fast deployment with cached AMI (~5 minutes)
+  python3 deploy_kamiwaza.py --name kamiwaza-demo --ami-id ami-0123456789abcdef0
 
   # Full options
   python3 deploy_kamiwaza.py \\
@@ -310,9 +348,9 @@ Examples:
       --instance-type t3.2xlarge \\
       --volume-size 200 \\
       --key-pair my-ssh-key \\
-      --package-url https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb
+      --ami-id ami-0123456789abcdef0
 
-For more information, see KAMIWAZA_DEPLOYMENT.md
+For more information, see AMI_CACHING_GUIDE.md
         """
     )
 
@@ -359,6 +397,10 @@ For more information, see KAMIWAZA_DEPLOYMENT.md
         default="https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb",
         help="URL to Kamiwaza .deb package (default: v0.9.2 noble x86_64 build3)"
     )
+    parser.add_argument(
+        "--ami-id",
+        help="Pre-configured Kamiwaza AMI ID for faster deployment (skips .deb installation)"
+    )
 
     # AWS authentication
     parser.add_argument(
@@ -395,7 +437,8 @@ For more information, see KAMIWAZA_DEPLOYMENT.md
         print()
 
     # Generate user data
-    user_data_b64 = generate_user_data(args.package_url)
+    use_cached_ami = bool(args.ami_id)
+    user_data_b64 = generate_user_data(args.package_url, use_cached_ami=use_cached_ami)
 
     # Deploy with CDK
     print(f"\nDeployment Configuration:")
@@ -403,7 +446,12 @@ For more information, see KAMIWAZA_DEPLOYMENT.md
     print(f"  Region: {args.region}")
     print(f"  Instance Type: {args.instance_type}")
     print(f"  Volume Size: {args.volume_size} GB")
-    print(f"  Package URL: {args.package_url}")
+    if args.ami_id:
+        print(f"  AMI ID: {args.ami_id} (pre-configured - fast deployment)")
+        print(f"  Expected deployment time: ~5 minutes")
+    else:
+        print(f"  Package URL: {args.package_url}")
+        print(f"  Expected deployment time: ~30 minutes (fresh installation)")
     if args.key_pair:
         print(f"  Key Pair: {args.key_pair}")
     if args.vpc_id:
@@ -426,7 +474,8 @@ For more information, see KAMIWAZA_DEPLOYMENT.md
         subnet_id=args.subnet_id,
         role_arn=args.role_arn,
         external_id=args.external_id,
-        skip_login_test=args.skip_login_test
+        skip_login_test=args.skip_login_test,
+        ami_id=args.ami_id
     )
 
     if success:

@@ -5,6 +5,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict
 
+import boto3
+from botocore.exceptions import ClientError
+
 from worker.celery_app import celery_app
 from app.database import SessionLocal
 from app.models import Job, JobLog
@@ -18,6 +21,40 @@ from app.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def vpc_exists(vpc_id: str, region: str, credentials: Dict) -> bool:
+    """
+    Check if a VPC exists in AWS.
+
+    Args:
+        vpc_id: The VPC ID to check
+        region: AWS region
+        credentials: Dict with 'access_key', 'secret_key', and optional 'session_token'
+
+    Returns:
+        True if VPC exists, False otherwise
+    """
+    try:
+        ec2_client = boto3.client(
+            'ec2',
+            region_name=region,
+            aws_access_key_id=credentials.get('access_key'),
+            aws_secret_access_key=credentials.get('secret_key'),
+            aws_session_token=credentials.get('session_token')
+        )
+
+        response = ec2_client.describe_vpcs(VpcIds=[vpc_id])
+        return len(response.get('Vpcs', [])) > 0
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'InvalidVpcID.NotFound':
+            return False
+        # For other errors, log but assume VPC doesn't exist
+        logger.warning(f"Error checking VPC {vpc_id}: {str(e)}")
+        return False
+    except Exception as e:
+        logger.warning(f"Unexpected error checking VPC {vpc_id}: {str(e)}")
+        return False
 
 
 @celery_app.task(bind=True, name='worker.tasks.execute_provisioning_job')
@@ -152,9 +189,13 @@ def execute_cdk_provisioning(job: Job, db, log_message):
         if recent_job and recent_job.terraform_outputs:
             reused_vpc_id = recent_job.terraform_outputs.get('VpcId')
             if reused_vpc_id:
-                job.vpc_id = reused_vpc_id
-                db.commit()
-                log_message("info", f"♻️  Reusing VPC from job #{recent_job.id}: {reused_vpc_id}")
+                # Verify VPC still exists before reusing
+                if vpc_exists(reused_vpc_id, job.aws_region, credentials):
+                    job.vpc_id = reused_vpc_id
+                    db.commit()
+                    log_message("info", f"♻️  Reusing VPC from job #{recent_job.id}: {reused_vpc_id}")
+                else:
+                    log_message("warning", f"⚠️  VPC {reused_vpc_id} from job #{recent_job.id} no longer exists, will create new VPC")
 
     # Generate user data script
     user_data_script = generate_user_data_script(job, db)
@@ -375,12 +416,16 @@ def generate_kamiwaza_user_data(job: Job, db) -> str:
     # Get package URL from settings
     package_url = os.environ.get("KAMIWAZA_PACKAGE_URL", "https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb")
 
+    # Get deployment mode from job (defaults to 'full' for backward compatibility)
+    deployment_mode = getattr(job, 'kamiwaza_deployment_mode', 'full') or 'full'
+
     # Build user data with environment variables
     user_data_lines = [
         "#!/bin/bash",
         "",
         "# Kamiwaza Deployment Configuration",
         f"export KAMIWAZA_PACKAGE_URL='{package_url}'",
+        f"export KAMIWAZA_DEPLOYMENT_MODE='{deployment_mode}'",
     ]
 
     # Add API keys from settings (if configured)

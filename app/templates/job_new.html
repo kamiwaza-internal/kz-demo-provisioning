@@ -61,6 +61,15 @@
     <div class="card" id="kamiwaza_config" style="display: none;">
         <h3>Kamiwaza Configuration</h3>
 
+        <div class="form-group">
+            <label for="kamiwaza_mode">Kamiwaza Deployment Mode *</label>
+            <select id="kamiwaza_mode" name="kamiwaza_mode">
+                <option value="full">Full - Complete deployment with Keycloak (user provisioning enabled)</option>
+                <option value="lite">Lite - Lightweight deployment (no Keycloak, no user provisioning)</option>
+            </select>
+            <small>Full mode required for user provisioning and application deployment</small>
+        </div>
+
         <div class="alert alert-info">
             <strong>Package-based Installation:</strong>
             Kamiwaza will be installed from the .deb package configured in Settings.

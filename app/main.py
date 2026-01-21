@@ -84,6 +84,7 @@ async def create_job(
     csrf_token: str = Form(...),
     job_name: str = Form(...),
     deployment_type: str = Form("docker"),
+    kamiwaza_mode: Optional[str] = Form("full"),
     kamiwaza_branch: Optional[str] = Form("release/0.9.2"),
     kamiwaza_github_token: Optional[str] = Form(None),
     aws_region: str = Form(...),
@@ -174,6 +175,7 @@ async def create_job(
             job_name=job_data.job_name,
             status="pending",
             deployment_type=job_data.deployment_type,
+            kamiwaza_deployment_mode=kamiwaza_mode if deployment_type == "kamiwaza" else None,
             kamiwaza_branch=job_data.kamiwaza_branch,
             kamiwaza_github_token=job_data.kamiwaza_github_token,
             aws_region=job_data.aws_region,
@@ -381,6 +383,79 @@ async def get_job_api(
     return JobResponse.model_validate(job)
 
 
+@app.post("/api/jobs/delete")
+async def delete_jobs(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Delete multiple jobs"""
+    try:
+        body = await request.json()
+        job_ids = body.get("job_ids", [])
+        csrf_token = body.get("csrf_token")
+
+        # Verify CSRF token
+        if not csrf_protection.verify_token(csrf_token):
+            return JSONResponse({
+                "success": False,
+                "error": "Invalid CSRF token"
+            }, status_code=403)
+
+        if not job_ids or not isinstance(job_ids, list):
+            return JSONResponse({
+                "success": False,
+                "error": "No job IDs provided"
+            }, status_code=400)
+
+        # Convert job_ids to integers
+        try:
+            job_ids = [int(jid) for jid in job_ids]
+        except (ValueError, TypeError):
+            return JSONResponse({
+                "success": False,
+                "error": "Invalid job ID format"
+            }, status_code=400)
+
+        # Delete jobs and their related data
+        deleted_count = 0
+        for job_id in job_ids:
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                # Delete related logs
+                db.query(JobLog).filter(JobLog.job_id == job_id).delete()
+
+                # Delete related files
+                job_files = db.query(JobFile).filter(JobFile.job_id == job_id).all()
+                for job_file in job_files:
+                    # Delete physical file if it exists
+                    try:
+                        if job_file.file_path and Path(job_file.file_path).exists():
+                            Path(job_file.file_path).unlink()
+                    except Exception as e:
+                        logger.warning(f"Could not delete file {job_file.file_path}: {str(e)}")
+                    db.delete(job_file)
+
+                # Delete the job itself
+                db.delete(job)
+                deleted_count += 1
+
+        db.commit()
+
+        logger.info(f"Deleted {deleted_count} job(s): {job_ids}")
+
+        return JSONResponse({
+            "success": True,
+            "deleted_count": deleted_count
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting jobs: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -400,7 +475,8 @@ async def deployment_manager_home(
 
     return templates.TemplateResponse("deployment_manager.html", {
         "request": request,
-        "csrf_token": csrf_token
+        "csrf_token": csrf_token,
+        "kamiwaza_url": settings.kamiwaza_url
     })
 
 
@@ -408,6 +484,7 @@ async def deployment_manager_home(
 async def create_provisioning_job(
     request: Request,
     csrf_token: str = Form(...),
+    deployment_mode: str = Form(...),
     csv_file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
@@ -416,6 +493,10 @@ async def create_provisioning_job(
     # Verify CSRF token
     if not csrf_protection.verify_token(csrf_token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
+
+    # Validate deployment_mode
+    if deployment_mode not in ["lite", "full"]:
+        raise HTTPException(status_code=400, detail="Invalid deployment_mode. Must be 'lite' or 'full'")
 
     try:
         # Read CSV content
@@ -431,12 +512,15 @@ async def create_provisioning_job(
 
         # Create job in database
         job = Job(
-            job_name=f"Kamiwaza User Provisioning - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+            job_name=f"Kamiwaza User Provisioning ({deployment_mode.upper()}) - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
             status="pending",
+            deployment_type="docker",  # User provisioning uses docker deployment
+            kamiwaza_deployment_mode=deployment_mode,
             aws_region="N/A",  # Not used for Kamiwaza provisioning
             aws_auth_method="N/A",
             instance_type="N/A",
             volume_size_gb=0,
+            dockerhub_images=[],  # No custom images for user provisioning
             requester_email="deployment-manager@kamiwaza.local",
             users_data=users  # Store users for display
         )
@@ -459,6 +543,10 @@ async def create_provisioning_job(
             file_size=len(csv_content)
         )
         db.add(job_file)
+        db.commit()  # Commit to get job_file.id
+        db.refresh(job_file)
+
+        # Now set the csv_file_id on the job
         job.csv_file_id = job_file.id
         db.commit()
 
@@ -499,7 +587,8 @@ async def deployment_manager_progress(
         "request": request,
         "job": job,
         "logs": logs,
-        "csrf_token": csrf_token
+        "csrf_token": csrf_token,
+        "kamiwaza_url": settings.kamiwaza_url
     })
 
 

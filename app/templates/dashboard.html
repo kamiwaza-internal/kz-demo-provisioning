@@ -6,8 +6,14 @@
 <div class="card">
     <h2>Provisioning Jobs</h2>
     <p>View and manage EC2 provisioning and user deployment jobs.</p>
-    <a href="/jobs/new" class="btn btn-primary">Create New Job</a>
-    <a href="/deployment-manager" class="btn btn-secondary" style="margin-left: 10px;">Provision Users</a>
+    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <a href="/jobs/new" class="btn btn-primary">Create New Job</a>
+        <a href="/deployment-manager" class="btn btn-secondary">Provision Users</a>
+        <button id="deleteSelectedBtn" class="btn btn-danger" style="display: none;" onclick="deleteSelectedJobs()">
+            <span style="font-size: 1.2rem;">🗑️</span> Delete Selected
+        </button>
+        <span id="selectedCount" style="color: #666; font-size: 0.9rem; display: none;"></span>
+    </div>
 </div>
 
 <div class="card">
@@ -15,6 +21,9 @@
         <table>
             <thead>
                 <tr>
+                    <th style="width: 40px;">
+                        <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)">
+                    </th>
                     <th>ID</th>
                     <th>Job Name</th>
                     <th>Type</th>
@@ -28,6 +37,9 @@
             <tbody>
                 {% for job in jobs %}
                 <tr>
+                    <td>
+                        <input type="checkbox" class="job-checkbox" data-job-id="{{ job.id }}" onchange="updateDeleteButton()">
+                    </td>
                     <td>{{ job.id }}</td>
                     <td>{{ job.job_name }}</td>
                     <td>
@@ -70,4 +82,89 @@
         <p>No jobs yet. <a href="/jobs/new">Create your first job</a>.</p>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.job-checkbox');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+    updateDeleteButton();
+}
+
+function updateDeleteButton() {
+    const checkboxes = document.querySelectorAll('.job-checkbox:checked');
+    const deleteBtn = document.getElementById('deleteSelectedBtn');
+    const selectedCount = document.getElementById('selectedCount');
+    const count = checkboxes.length;
+
+    if (count > 0) {
+        deleteBtn.style.display = 'inline-block';
+        selectedCount.style.display = 'inline';
+        selectedCount.textContent = `${count} job${count > 1 ? 's' : ''} selected`;
+    } else {
+        deleteBtn.style.display = 'none';
+        selectedCount.style.display = 'none';
+    }
+
+    // Update "select all" checkbox state
+    const allCheckboxes = document.querySelectorAll('.job-checkbox');
+    const selectAllCheckbox = document.getElementById('selectAll');
+    if (allCheckboxes.length > 0) {
+        selectAllCheckbox.checked = allCheckboxes.length === count;
+    }
+}
+
+function deleteSelectedJobs() {
+    const checkboxes = document.querySelectorAll('.job-checkbox:checked');
+    const jobIds = Array.from(checkboxes).map(cb => cb.getAttribute('data-job-id'));
+
+    if (jobIds.length === 0) {
+        return;
+    }
+
+    const confirmed = confirm(
+        `Are you sure you want to delete ${jobIds.length} job${jobIds.length > 1 ? 's' : ''}?\n\n` +
+        `This will permanently remove the job records from the database. This action cannot be undone.`
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    // Show loading state
+    const deleteBtn = document.getElementById('deleteSelectedBtn');
+    const originalText = deleteBtn.innerHTML;
+    deleteBtn.innerHTML = '<span style="font-size: 1.2rem;">⏳</span> Deleting...';
+    deleteBtn.disabled = true;
+
+    // Send delete request
+    fetch('/api/jobs/delete', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            job_ids: jobIds,
+            csrf_token: '{{ csrf_token }}'
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Reload the page to show updated list
+            window.location.reload();
+        } else {
+            alert('Error deleting jobs: ' + (data.error || 'Unknown error'));
+            deleteBtn.innerHTML = originalText;
+            deleteBtn.disabled = false;
+        }
+    })
+    .catch(error => {
+        alert('Error deleting jobs: ' + error.message);
+        deleteBtn.innerHTML = originalText;
+        deleteBtn.disabled = false;
+    });
+}
+</script>
 {% endblock %}

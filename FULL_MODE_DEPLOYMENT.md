@@ -8,17 +8,19 @@ Kamiwaza can be deployed in two modes:
 
 ## Environment Variable
 
-The deployment mode is controlled by the `KAMIWAZA_LITE` environment variable:
+The deployment mode is controlled by the `KAMIWAZA_MODE` environment variable:
 
 ```bash
-# Full mode (default if not set)
-export KAMIWAZA_LITE=false
+# Full mode
+export KAMIWAZA_MODE="full"
 kamiwaza start
 
-# Lite mode (minimal services)
-export KAMIWAZA_LITE=true
+# Lite mode (default if not set)
+# Don't set KAMIWAZA_MODE, or set it to "lite"
 kamiwaza start
 ```
+
+**Note:** There may also be a `KAMIWAZA_LITE` variable (true/false), but `KAMIWAZA_MODE="full"` is the recommended approach.
 
 ## Deployment Script Changes
 
@@ -28,7 +30,9 @@ kamiwaza start
 ### Implementation
 ```bash
 # Run kamiwaza start in FULL mode
-su - $KAMIWAZA_USER -c "export KAMIWAZA_LITE=false && kamiwaza start"
+# Using -E flag to preserve environment variables through su
+export KAMIWAZA_MODE="full"
+su -E $KAMIWAZA_USER -c "kamiwaza start"
 ```
 
 ## Differences Between Modes
