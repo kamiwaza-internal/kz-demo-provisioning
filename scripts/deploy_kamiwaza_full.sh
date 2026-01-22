@@ -110,6 +110,42 @@ log "✓ Kamiwaza package installed successfully"
 rm -f "/tmp/$PACKAGE_FILENAME"
 log "✓ Cleaned up temporary package file"
 
+# WORKAROUND: Fix Kamiwaza .deb package bug
+# The .deb package postinst script ignores KAMIWAZA_LITE environment variable
+# and always sets up the systemd service and env.sh for lite mode.
+# We need to manually fix these files to match the requested deployment mode.
+log "Applying deployment mode configuration workaround..."
+
+if [ "$KAMIWAZA_DEPLOYMENT_MODE" = "lite" ]; then
+    log "Ensuring lite mode configuration..."
+    # Make sure systemd service has KAMIWAZA_LITE=true
+    if [ -f /etc/systemd/system/kamiwaza.service ]; then
+        sed -i 's/Environment="KAMIWAZA_LITE=false"/Environment="KAMIWAZA_LITE=true"/' /etc/systemd/system/kamiwaza.service || true
+    fi
+    # Make sure env.sh has correct settings
+    if [ -f /opt/kamiwaza/kamiwaza/env.sh ]; then
+        sed -i 's/export KAMIWAZA_LITE=false/export KAMIWAZA_LITE=true/' /opt/kamiwaza/kamiwaza/env.sh || true
+        sed -i 's/export KAMIWAZA_USE_AUTH=true/export KAMIWAZA_USE_AUTH=false/' /opt/kamiwaza/kamiwaza/env.sh || true
+    fi
+else
+    log "Ensuring full mode configuration..."
+    # Fix systemd service to use KAMIWAZA_LITE=false
+    if [ -f /etc/systemd/system/kamiwaza.service ]; then
+        sed -i 's/Environment="KAMIWAZA_LITE=true"/Environment="KAMIWAZA_LITE=false"/' /etc/systemd/system/kamiwaza.service || true
+        log "  • Updated systemd service: KAMIWAZA_LITE=false"
+    fi
+    # Fix env.sh to enable authentication and disable lite mode
+    if [ -f /opt/kamiwaza/kamiwaza/env.sh ]; then
+        sed -i 's/export KAMIWAZA_LITE=true/export KAMIWAZA_LITE=false/' /opt/kamiwaza/kamiwaza/env.sh || true
+        sed -i 's/export KAMIWAZA_USE_AUTH=false/export KAMIWAZA_USE_AUTH=true/' /opt/kamiwaza/kamiwaza/env.sh || true
+        log "  • Updated env.sh: KAMIWAZA_LITE=false, KAMIWAZA_USE_AUTH=true"
+    fi
+    # Reload systemd to pick up changes
+    systemctl daemon-reload
+fi
+
+log "✓ Deployment mode configuration workaround applied"
+
 # Step 4: Start Kamiwaza (per official instructions)
 log "Step 4: Starting Kamiwaza with 'kamiwaza start'..."
 

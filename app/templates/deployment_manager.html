@@ -10,13 +10,37 @@
 
 <div class="card" style="border-left: 4px solid #2196F3; background: #E3F2FD;">
     <h3 style="margin-top: 0; color: #1976D2;">🎯 Target Kamiwaza Instance</h3>
+
+    {% if available_instances %}
+    <div class="form-group" style="margin-top: 1rem;">
+        <label for="target_instance" style="font-weight: bold; color: #1976D2;">Select Kamiwaza Instance:</label>
+        <select id="target_instance" style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid #90CAF9; font-size: 1rem;" onchange="updateTargetUrl()">
+            <option value="">-- Select a deployed instance --</option>
+            {% for instance in available_instances %}
+            <option value="{{ instance.url }}" data-name="{{ instance.name }}" data-completed="{{ instance.completed_at }}">
+                {{ instance.name }} - {{ instance.url }} (deployed: {{ instance.completed_at }})
+            </option>
+            {% endfor %}
+            <option value="{{ kamiwaza_url }}">Custom: {{ kamiwaza_url }} (from Settings)</option>
+        </select>
+    </div>
+
+    <div id="selected_url_display" style="font-size: 1rem; margin-top: 1rem; display: none;">
+        <strong>Selected URL:</strong> <code id="selected_url_code" style="background: #fff; padding: 0.25rem 0.5rem; border-radius: 3px; font-size: 0.95rem;"></code>
+    </div>
+
+    <div class="alert alert-info" style="margin-top: 1rem;">
+        <strong>💡 Tip:</strong> Select from your recently deployed Kamiwaza instances, or use the custom URL from <a href="/settings" style="color: #1976D2; text-decoration: underline;">Settings</a>.
+    </div>
+    {% else %}
     <div style="font-size: 1rem; margin-top: 0.5rem;">
         <strong>URL:</strong> <code style="background: #fff; padding: 0.25rem 0.5rem; border-radius: 3px; font-size: 0.95rem;">{{ kamiwaza_url }}</code>
     </div>
-    <div style="font-size: 0.9rem; margin-top: 0.75rem; color: #555;">
-        Users will be provisioned into this Kamiwaza instance. To change this, go to
-        <a href="/settings" style="color: #1976D2; text-decoration: underline;">Settings</a>.
+    <div class="alert alert-warning" style="margin-top: 1rem;">
+        <strong>No Kamiwaza instances found.</strong><br>
+        Deploy a Kamiwaza instance first, or configure the URL in <a href="/settings" style="color: #1976D2; text-decoration: underline;">Settings</a>.
     </div>
+    {% endif %}
 </div>
 
 <div class="card">
@@ -34,6 +58,7 @@
 
     <form method="POST" action="/deployment-manager/provision" enctype="multipart/form-data" id="provisionForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="target_kamiwaza_url" id="target_kamiwaza_url" value="{{ kamiwaza_url }}">
 
         <div class="form-group">
             <label for="csv_file">User CSV File *</label>
@@ -74,6 +99,33 @@ john@kamiwaza.ai,analyst</pre>
 
 {% block extra_scripts %}
 <script>
+// Update target URL when instance is selected
+function updateTargetUrl() {
+    const select = document.getElementById('target_instance');
+    const selectedUrl = select.value;
+    const hiddenField = document.getElementById('target_kamiwaza_url');
+    const displayDiv = document.getElementById('selected_url_display');
+    const displayCode = document.getElementById('selected_url_code');
+
+    if (selectedUrl) {
+        hiddenField.value = selectedUrl;
+        displayCode.textContent = selectedUrl;
+        displayDiv.style.display = 'block';
+    } else {
+        displayDiv.style.display = 'none';
+    }
+}
+
+// Set initial selection if available
+document.addEventListener('DOMContentLoaded', function() {
+    const select = document.getElementById('target_instance');
+    if (select && select.options.length > 1) {
+        // Auto-select the first deployed instance
+        select.selectedIndex = 1;
+        updateTargetUrl();
+    }
+});
+
 document.getElementById('csv_file').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) {

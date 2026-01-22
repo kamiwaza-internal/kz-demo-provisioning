@@ -1506,6 +1506,7 @@ def create_ami_after_deployment(self, job_id: int):
                     'Tags': [
                         {'Key': 'Name', 'Value': ami_name},
                         {'Key': 'KamiwazaVersion', 'Value': kamiwaza_version},
+                        {'Key': 'KamiwazaDeploymentMode', 'Value': job.kamiwaza_deployment_mode or 'full'},
                         {'Key': 'CreatedFrom', 'Value': job.instance_id},
                         {'Key': 'CreatedFromJob', 'Value': str(job.id)},
                         {'Key': 'ManagedBy', 'Value': 'KamiwazaDeploymentManager'},
