@@ -91,9 +91,12 @@ log "=========================================="
 log "Kamiwaza First Boot (from cached AMI)"
 log "=========================================="
 
+# Use ec2-user for RHEL 9
+KAMIWAZA_USER="ec2-user"
+
 # Start Kamiwaza (it's already installed)
-log "Starting Kamiwaza..."
-su - ubuntu -c "kamiwaza start" 2>&1 | tee -a /var/log/kamiwaza-startup.log &
+log "Starting Kamiwaza as user: $KAMIWAZA_USER..."
+su - $KAMIWAZA_USER -c "kamiwaza start" 2>&1 | tee -a /var/log/kamiwaza-startup.log &
 
 log "✓ Kamiwaza start initiated"
 log "This deployment used a pre-configured AMI (fast deployment)"
@@ -115,10 +118,10 @@ log "Monitor startup: sudo tail -f /var/log/kamiwaza-startup.log"
 
     # Build user data
     user_data = "#!/bin/bash\n\n"
-    user_data += "# Kamiwaza Deployment Configuration\n"
+    user_data += "# Kamiwaza Deployment Configuration for RHEL 9\n"
     user_data += f"export KAMIWAZA_PACKAGE_URL='{package_url}'\n"
     user_data += "export KAMIWAZA_ROOT='/opt/kamiwaza'\n"
-    user_data += "export KAMIWAZA_USER='ubuntu'\n"
+    user_data += "export KAMIWAZA_USER='ec2-user'\n"
     user_data += "\n"
     user_data += deployment_script
 
@@ -308,7 +311,7 @@ def deploy_with_cdk(
                 print(f"Password: kamiwaza")
                 print("\n⏳ Note: Deployment is still in progress on the EC2 instance.")
                 print("   It may take 10-20 more minutes for Kamiwaza to be fully ready.")
-                print(f"   Monitor progress: ssh ubuntu@{public_ip} -i your-key.pem")
+                print(f"   Monitor progress: ssh ec2-user@{public_ip} -i your-key.pem  (RHEL)")
                 print(f"   Then run: sudo tail -f /var/log/kamiwaza-deployment.log")
 
                 # Test login page accessibility
@@ -335,7 +338,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic deployment (fresh install - 30+ minutes)
+  # Basic deployment on RHEL 9 (fresh install - 30+ minutes)
   python3 deploy_kamiwaza.py --name kamiwaza-demo
 
   # Fast deployment with cached AMI (~5 minutes)
@@ -349,6 +352,8 @@ Examples:
       --volume-size 200 \\
       --key-pair my-ssh-key \\
       --ami-id ami-0123456789abcdef0
+
+  Note: Deploys to RHEL 9 by default. SSH user is 'ec2-user'.
 
 For more information, see AMI_CACHING_GUIDE.md
         """
@@ -394,8 +399,8 @@ For more information, see AMI_CACHING_GUIDE.md
     # Kamiwaza configuration
     parser.add_argument(
         "--package-url",
-        default="https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb",
-        help="URL to Kamiwaza .deb package (default: v0.9.2 noble x86_64 build3)"
+        default="https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/rpm/rhel9/x86_64/kamiwaza_v0.9.2_rhel9_x86_64-online_rc18.rpm",
+        help="URL to Kamiwaza RPM package (default: v0.9.2 RHEL9 x86_64 online rc18)"
     )
     parser.add_argument(
         "--ami-id",

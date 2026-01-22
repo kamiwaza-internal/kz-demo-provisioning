@@ -57,16 +57,18 @@ if [ -f /etc/os-release ]; then
     . /etc/os-release
     log_info "Detected OS: $ID $VERSION_ID"
 
-    # Kamiwaza officially supports Ubuntu 22.04 and 24.04
-    if [ "$ID" != "ubuntu" ]; then
-        log_warn "Kamiwaza is officially supported on Ubuntu 22.04/24.04"
-        log_warn "Detected OS: $ID $VERSION_ID - installation may not work correctly"
-    elif [ "$VERSION_ID" != "22.04" ] && [ "$VERSION_ID" != "24.04" ]; then
-        log_warn "Kamiwaza is officially supported on Ubuntu 22.04/24.04"
-        log_warn "Detected version: $VERSION_ID - installation may not work correctly"
+    # This script is for RHEL 9 family only
+    if [ "$ID" = "rhel" ] || [ "$ID" = "centos" ] || [ "$ID" = "rocky" ] || [ "$ID" = "almalinux" ]; then
+        if [ "${VERSION_ID%%.*}" != "9" ]; then
+            log_warn "This script is configured for RHEL 9 family"
+            log_warn "Detected version: $VERSION_ID - installation may not work correctly"
+        fi
+        log_success "OS validation passed: $ID $VERSION_ID"
+    else
+        error_exit "Unsupported OS: $ID $VERSION_ID. This script requires RHEL 9 or compatible distribution."
     fi
 else
-    log_warn "Cannot detect OS version"
+    error_exit "Cannot detect OS version"
 fi
 
 # Check available RAM (minimum 16GB, recommended 32GB)
@@ -107,43 +109,45 @@ log_info ""
 
 # Install required system dependencies
 log_info "Installing system dependencies..."
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
+log_info "Using dnf package manager for RHEL..."
+dnf update -y -q
 
-# Core dependencies per Kamiwaza documentation
+# Enable EPEL and CodeReady Builder for additional packages
+dnf install -y -q epel-release
+dnf config-manager --set-enabled crb || dnf config-manager --set-enabled powertools
+
+# Core dependencies
 log_info "Installing core build tools and libraries..."
-apt-get install -y -qq \
+dnf groupinstall -y -q "Development Tools"
+dnf install -y -q \
     curl \
     wget \
     unzip \
     git \
-    build-essential \
-    software-properties-common \
     ca-certificates \
     gnupg \
-    lsb-release \
     jq \
     rsync \
     > /dev/null 2>&1 || error_exit "Failed to install core dependencies"
 
-# Python dependencies (required for Python 3.10)
+# Python dependencies
 log_info "Installing Python development libraries..."
-apt-get install -y -qq \
-    python3-dev \
+dnf install -y -q \
+    python3-devel \
     python3-pip \
-    python3-venv \
-    libpq-dev \
-    libssl-dev \
-    libffi-dev \
+    libpq-devel \
+    openssl-devel \
+    libffi-devel \
     > /dev/null 2>&1 || error_exit "Failed to install Python dependencies"
 
-# Cairo and GObject libraries (required per Kamiwaza docs)
+# Cairo and GObject libraries
 log_info "Installing Cairo and GObject libraries..."
-apt-get install -y -qq \
-    libcairo2-dev \
-    libgirepository1.0-dev \
-    libglib2.0-dev \
-    pkg-config \
+dnf install -y -q \
+    cairo-devel \
+    cairo-gobject-devel \
+    gobject-introspection-devel \
+    glib2-devel \
+    pkgconfig \
     > /dev/null 2>&1 || error_exit "Failed to install Cairo/GObject libraries"
 
 log_success "System dependencies installed"
@@ -237,9 +241,9 @@ log_success "Source extracted"
 # ========================================
 if ! python3.10 --version &> /dev/null; then
     log_info "Installing Python 3.10 (required)..."
-    add-apt-repository -y ppa:deadsnakes/ppa > /dev/null 2>&1
-    apt-get update -qq
-    apt-get install -y -qq python3.10 python3.10-venv python3.10-dev python3.10-distutils
+    dnf install -y -q python3.10 python3.10-devel python3.10-pip
+    # Create alternatives for python3.10
+    alternatives --install /usr/bin/python3.10 python3.10 /usr/bin/python3.10 1 || true
     log_success "Python 3.10 installed"
 else
     PYTHON_VERSION=$(python3.10 --version | grep -oP '\d+\.\d+\.\d+')
@@ -263,14 +267,14 @@ if command -v node &> /dev/null; then
     else
         log_warn "Node.js $NODE_VERSION detected. Kamiwaza requires Node.js 22"
         log_info "Installing Node.js 22..."
-        curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1
-        apt-get install -y -qq nodejs
+        curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - > /dev/null 2>&1
+        dnf install -y -q nodejs
         log_success "Node.js 22 installed ($(node --version))"
     fi
 else
     log_info "Installing Node.js 22 (required)..."
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1
-    apt-get install -y -qq nodejs
+    curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - > /dev/null 2>&1
+    dnf install -y -q nodejs
     log_success "Node.js 22 installed ($(node --version))"
 fi
 

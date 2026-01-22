@@ -92,10 +92,10 @@ class KamiwazaEC2Stack(Stack):
                 self.region: ami_id
             })
         else:
-            # Use latest Ubuntu 24.04 LTS (required for Kamiwaza .deb package)
+            # Use latest Red Hat Enterprise Linux 9
             machine_image = ec2.MachineImage.lookup(
-                name="ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*",
-                owners=["099720109477"]  # Canonical
+                name="RHEL-9*_HVM-*-x86_64-*",
+                owners=["309956199498"]  # Red Hat
             )
 
         # IAM role for EC2 instance
@@ -117,14 +117,14 @@ class KamiwazaEC2Stack(Stack):
             user_data_str = base64.b64decode(user_data_b64).decode('utf-8')
             user_data = ec2.UserData.custom(user_data_str)
         else:
-            # Default user data for Ubuntu (basic setup only)
+            # Default user data for RHEL 9 (basic setup only)
             user_data = ec2.UserData.for_linux()
             user_data.add_commands(
                 "#!/bin/bash",
-                "export DEBIAN_FRONTEND=noninteractive",
-                "apt-get update -y",
-                "apt-get upgrade -y",
-                "# Additional setup should be provided via user_data_b64"
+                "# RHEL 9 basic setup",
+                "dnf update -y -q",
+                "dnf install -y -q wget curl",
+                "# For full Kamiwaza installation, provide custom user_data_b64"
             )
 
         # EC2 Instance

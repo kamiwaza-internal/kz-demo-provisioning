@@ -89,7 +89,10 @@ def main():
         print("="*70)
 
         send_command(ssm, [
-            'sudo -u ubuntu kamiwaza stop 2>/dev/null || true',
+            '# Detect the kamiwaza user (ec2-user for RHEL, ubuntu for Ubuntu)',
+            'if id ec2-user &>/dev/null; then KAMIWAZA_USER=ec2-user; elif id ubuntu &>/dev/null; then KAMIWAZA_USER=ubuntu; else KAMIWAZA_USER=kamiwaza; fi',
+            'echo "Using user: $KAMIWAZA_USER"',
+            'sudo -u $KAMIWAZA_USER kamiwaza stop 2>/dev/null || true',
             'sudo systemctl stop kamiwaza 2>/dev/null || true',
             'docker ps -a --format "{{.Names}}" | grep -E "kamiwaza|keycloak|traefik|backend|celery" | xargs -r docker stop',
             'sleep 5',
@@ -137,8 +140,11 @@ def main():
         print("This will take 2-3 minutes...")
 
         send_command(ssm, [
-            'cd /home/ubuntu',
-            'sudo -u ubuntu bash -c "export KAMIWAZA_MODE=' + kamiwaza_mode + ' && kamiwaza start" > /var/log/kamiwaza-restart.log 2>&1 &',
+            '# Detect the kamiwaza user and home directory',
+            'if id ec2-user &>/dev/null; then KAMIWAZA_USER=ec2-user; KAMIWAZA_HOME=/home/ec2-user; elif id ubuntu &>/dev/null; then KAMIWAZA_USER=ubuntu; KAMIWAZA_HOME=/home/ubuntu; else KAMIWAZA_USER=kamiwaza; KAMIWAZA_HOME=/opt/kamiwaza; fi',
+            'echo "Using user: $KAMIWAZA_USER"',
+            'cd $KAMIWAZA_HOME',
+            'sudo -u $KAMIWAZA_USER bash -c "export KAMIWAZA_MODE=' + kamiwaza_mode + ' && kamiwaza start" > /var/log/kamiwaza-restart.log 2>&1 &',
             'echo "Start command issued, waiting..."',
             'sleep 20',
             'echo "Initial wait complete"'
@@ -197,7 +203,9 @@ def main():
         else:
             print("\n⚠ Some commands failed. Check the output above for errors.")
             print("\nTry running manually:")
-            print("  ssh ubuntu@100.53.110.232")
+            print("  ssh ec2-user@100.53.110.232  (for RHEL)")
+            print("  OR")
+            print("  ssh ubuntu@100.53.110.232  (for Ubuntu)")
             print("  export KAMIWAZA_MODE=" + kamiwaza_mode)
             print("  kamiwaza start")
 

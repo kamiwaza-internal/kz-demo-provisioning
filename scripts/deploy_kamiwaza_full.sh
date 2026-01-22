@@ -1,17 +1,13 @@
 #!/bin/bash
 #
-# Kamiwaza Official Installation Script for EC2
-# This script follows the official Kamiwaza .deb installation instructions
+# Kamiwaza Official Installation Script for EC2 (RHEL 9)
+# This script installs Kamiwaza using the official RPM package
 #
 # Usage: Run as root on EC2 instance startup (via user data)
-# OS: Ubuntu 22.04 or 24.04 LTS ONLY
-# Reference: https://docs.kamiwaza.ai/installation/linux_macos_tarball
+# OS: Red Hat Enterprise Linux 9
 #
 
 set -euo pipefail
-
-# Ensure non-interactive mode for all apt/dpkg operations
-export DEBIAN_FRONTEND=noninteractive
 
 # Logging functions
 log() {
@@ -23,8 +19,8 @@ error() {
 }
 
 # Configuration - can be overridden via environment variables
-KAMIWAZA_PACKAGE_URL="${KAMIWAZA_PACKAGE_URL:-https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb}"
-KAMIWAZA_USER="${KAMIWAZA_USER:-ubuntu}"
+KAMIWAZA_PACKAGE_URL="${KAMIWAZA_PACKAGE_URL:-https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/rpm/rhel9/x86_64/kamiwaza_v0.9.2_rhel9_x86_64-online_rc18.rpm}"
+KAMIWAZA_USER="${KAMIWAZA_USER:-ec2-user}"
 KAMIWAZA_DEPLOYMENT_MODE="${KAMIWAZA_DEPLOYMENT_MODE:-full}"
 
 # Start deployment
@@ -45,33 +41,32 @@ else
     exit 1
 fi
 
-# Validate Ubuntu
-if [ "$OS" != "ubuntu" ]; then
-    error "This script only supports Ubuntu 22.04 or 24.04 LTS"
+# Validate RHEL
+if [ "$OS" != "rhel" ] && [ "$OS" != "centos" ] && [ "$OS" != "rocky" ]; then
+    error "This script only supports Red Hat Enterprise Linux 9 and compatible distributions"
     error "Detected OS: $OS $VER"
-    error "For other operating systems, please use the tarball installation method"
     exit 1
 fi
 
-if [ "$VER" != "22.04" ] && [ "$VER" != "24.04" ]; then
-    error "This script only supports Ubuntu 22.04 or 24.04 LTS"
+if [ "${VER%%.*}" != "9" ]; then
+    error "This script only supports RHEL 9 family"
     error "Detected version: $VER"
     exit 1
 fi
 
-log "✓ OS validation passed: Ubuntu $VER"
+log "✓ OS validation passed: $OS $VER"
 
 # Detect architecture
 ARCH=$(uname -m)
 log "Architecture: $ARCH"
 
-# Step 1: Update system packages (per official instructions)
-log "Step 1: Running 'sudo apt update'..."
-apt-get update -y
+# Step 1: Update system packages
+log "Step 1: Running 'dnf update'..."
+dnf update -y -q
 log "✓ System packages updated"
 
-# Step 2: Download Kamiwaza .deb package (per official instructions)
-log "Step 2: Downloading Kamiwaza package..."
+# Step 2: Download Kamiwaza RPM package
+log "Step 2: Downloading Kamiwaza RPM package..."
 PACKAGE_FILENAME=$(basename "$KAMIWAZA_PACKAGE_URL")
 wget "$KAMIWAZA_PACKAGE_URL" -P /tmp
 
@@ -81,40 +76,32 @@ if [ $? -ne 0 ]; then
 fi
 log "✓ Package downloaded to /tmp/$PACKAGE_FILENAME"
 
-# Step 3: Install Kamiwaza package (per official instructions)
-log "Step 3: Installing Kamiwaza with 'sudo apt install -f -y /tmp/$PACKAGE_FILENAME'..."
+# Step 3: Install Kamiwaza RPM package
+log "Step 3: Installing Kamiwaza with 'dnf install -y /tmp/$PACKAGE_FILENAME'..."
 
-# CRITICAL: Set KAMIWAZA_LITE environment variable BEFORE installation
-# The .deb package's postinst script reads this variable to configure the mode
+# Set KAMIWAZA_LITE environment variable BEFORE installation
 if [ "$KAMIWAZA_DEPLOYMENT_MODE" = "lite" ]; then
     log "Setting KAMIWAZA_LITE=true for lite mode installation..."
     export KAMIWAZA_LITE=true
-    export DEBIAN_FRONTEND=noninteractive
-    echo "kamiwaza kamiwaza/mode string lite" | debconf-set-selections
 else
     log "Setting KAMIWAZA_LITE=false for full mode installation..."
     export KAMIWAZA_LITE=false
-    export DEBIAN_FRONTEND=noninteractive
-    echo "kamiwaza kamiwaza/mode string full" | debconf-set-selections
 fi
 
-apt install -f -y "/tmp/$PACKAGE_FILENAME"
+dnf install -y "/tmp/$PACKAGE_FILENAME"
 
 if [ $? -ne 0 ]; then
-    error "Failed to install Kamiwaza package"
+    error "Failed to install Kamiwaza RPM package"
     exit 1
 fi
-log "✓ Kamiwaza package installed successfully"
+log "✓ Kamiwaza RPM package installed successfully"
 
 # Clean up temp file
 rm -f "/tmp/$PACKAGE_FILENAME"
 log "✓ Cleaned up temporary package file"
 
-# WORKAROUND: Fix Kamiwaza .deb package bug
-# The .deb package postinst script ignores KAMIWAZA_LITE environment variable
-# and always sets up the systemd service and env.sh for lite mode.
-# We need to manually fix these files to match the requested deployment mode.
-log "Applying deployment mode configuration workaround..."
+# Configure deployment mode
+log "Configuring deployment mode..."
 
 if [ "$KAMIWAZA_DEPLOYMENT_MODE" = "lite" ]; then
     log "Ensuring lite mode configuration..."

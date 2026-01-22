@@ -13,19 +13,24 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Data source for latest Amazon Linux 2023 AMI
-data "aws_ami" "amazon_linux_2023" {
+# Data source for latest Red Hat Enterprise Linux 9 AMI
+data "aws_ami" "rhel_9" {
   most_recent = true
-  owners      = ["amazon"]
+  owners      = ["309956199498"] # Red Hat owner ID
 
   filter {
     name   = "name"
-    values = ["al2023-ami-*-x86_64"]
+    values = ["RHEL-9*_HVM-*-x86_64-*"]
   }
 
   filter {
     name   = "virtualization-type"
     values = ["hvm"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = ["x86_64"]
   }
 }
 
@@ -54,7 +59,7 @@ data "aws_subnets" "default" {
 locals {
   vpc_id    = var.vpc_id != "" ? var.vpc_id : (length(data.aws_vpc.default) > 0 ? data.aws_vpc.default[0].id : "")
   subnet_id = var.subnet_id != "" ? var.subnet_id : (length(data.aws_subnets.default) > 0 && length(data.aws_subnets.default[0].ids) > 0 ? data.aws_subnets.default[0].ids[0] : "")
-  ami_id    = var.ami_id != "" ? var.ami_id : data.aws_ami.amazon_linux_2023.id
+  ami_id    = var.ami_id != "" ? var.ami_id : data.aws_ami.rhel_9.id
 
   use_custom_sg = length(var.security_group_ids) > 0
   create_sg     = !local.use_custom_sg

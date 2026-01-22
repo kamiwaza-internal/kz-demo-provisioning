@@ -265,7 +265,7 @@ fi
 # Generate AMI name with timestamp
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 AMI_NAME="${AMI_NAME_PREFIX}-${KAMIWAZA_VERSION}-${TIMESTAMP}"
-AMI_DESCRIPTION="Kamiwaza ${KAMIWAZA_VERSION} pre-installed on Ubuntu 24.04 LTS (created from ${INSTANCE_ID})"
+AMI_DESCRIPTION="Kamiwaza ${KAMIWAZA_VERSION} pre-installed on RHEL 9 (created from ${INSTANCE_ID})"
 
 log ""
 log "AMI Configuration:"
