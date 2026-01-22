@@ -247,6 +247,76 @@ log "Step 5: Verifying deployment..."
 PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || echo "unknown")
 PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4 || echo "unknown")
 
+# Step 5.1: Fix Keycloak hostname configuration
+# By default, Keycloak may be configured with 'localhost' which breaks OAuth login
+# from external clients. We need to update it to use the public IP.
+if [ "$PUBLIC_IP" != "unknown" ] && [ "$KAMIWAZA_DEPLOYMENT_MODE" = "full" ]; then
+    log "Fixing Keycloak hostname configuration..."
+    
+    # Wait for Keycloak to be ready
+    KEYCLOAK_READY=false
+    for i in {1..30}; do
+        if curl -sk https://localhost/realms/kamiwaza/.well-known/openid-configuration >/dev/null 2>&1; then
+            KEYCLOAK_READY=true
+            break
+        fi
+        sleep 5
+    done
+    
+    if [ "$KEYCLOAK_READY" = true ]; then
+        # Check current issuer
+        CURRENT_ISSUER=$(curl -sk https://localhost/realms/kamiwaza/.well-known/openid-configuration 2>/dev/null | grep -o '"issuer":"[^"]*"' | head -1 || echo "")
+        
+        if echo "$CURRENT_ISSUER" | grep -q "localhost"; then
+            log "Keycloak configured with localhost, updating to $PUBLIC_IP..."
+            
+            # Find docker-compose file
+            COMPOSE_FILE=""
+            for f in /opt/kamiwaza/docker-compose.yml /opt/kamiwaza/kamiwaza/docker-compose.yml; do
+                if [ -f "$f" ]; then
+                    COMPOSE_FILE="$f"
+                    break
+                fi
+            done
+            
+            if [ -n "$COMPOSE_FILE" ]; then
+                # Backup and update
+                cp "$COMPOSE_FILE" "${COMPOSE_FILE}.backup"
+                
+                # Add or update KC_HOSTNAME environment variable
+                if grep -q "KC_HOSTNAME" "$COMPOSE_FILE"; then
+                    sed -i "s|KC_HOSTNAME=.*|KC_HOSTNAME=$PUBLIC_IP|g" "$COMPOSE_FILE"
+                else
+                    # Try to add it to the keycloak service section
+                    sed -i "/keycloak:/,/environment:/{/environment:/a\\      - KC_HOSTNAME=$PUBLIC_IP\\n      - KC_HOSTNAME_STRICT=false}" "$COMPOSE_FILE" 2>/dev/null || true
+                fi
+                
+                # Restart Keycloak
+                KEYCLOAK_CONTAINER=$(docker ps --format '{{.Names}}' | grep -i keycloak | head -1 || echo "")
+                if [ -n "$KEYCLOAK_CONTAINER" ]; then
+                    log "Restarting Keycloak container to apply hostname fix..."
+                    docker restart "$KEYCLOAK_CONTAINER" 2>/dev/null || true
+                    sleep 30
+                    
+                    # Verify fix
+                    NEW_ISSUER=$(curl -sk https://localhost/realms/kamiwaza/.well-known/openid-configuration 2>/dev/null | grep -o '"issuer":"[^"]*"' | head -1 || echo "")
+                    if echo "$NEW_ISSUER" | grep -q "$PUBLIC_IP"; then
+                        log "✓ Keycloak hostname updated successfully to $PUBLIC_IP"
+                    else
+                        log "⚠ Keycloak hostname may still be localhost - login might require manual fix"
+                    fi
+                fi
+            else
+                log "⚠ Could not find docker-compose.yml to update Keycloak hostname"
+            fi
+        else
+            log "✓ Keycloak already configured with correct hostname"
+        fi
+    else
+        log "⚠ Keycloak not ready yet - skipping hostname fix"
+    fi
+fi
+
 # Check if Docker containers are running (Kamiwaza uses Docker internally)
 if docker ps &> /dev/null; then
     CONTAINER_COUNT=$(docker ps | grep -c kamiwaza || true)

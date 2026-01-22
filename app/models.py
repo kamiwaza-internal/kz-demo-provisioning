@@ -48,6 +48,14 @@ class Job(Base):
     csv_file_id = Column(Integer, ForeignKey("job_files.id"), nullable=True)
     users_data = Column(JSON, nullable=True)  # Parsed CSV data
 
+    # App Garden Configuration
+    selected_apps = Column(JSON, nullable=True)  # List of app names to pre-install from App Garden
+
+    # Toolshed Configuration
+    selected_tools = Column(JSON, nullable=True)  # List of tool template names to deploy from Toolshed
+    tool_deployment_status = Column(JSON, nullable=True)  # {tool_name: "pending|success|failed"}
+    custom_mcp_github_urls = Column(JSON, nullable=True)  # List of GitHub URLs for custom MCP tools to import
+
     # Outputs
     instance_id = Column(String(100), nullable=True)
     public_ip = Column(String(50), nullable=True)

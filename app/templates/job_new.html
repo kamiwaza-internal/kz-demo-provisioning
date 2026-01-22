@@ -71,15 +71,111 @@
         </div>
 
         <div class="alert alert-info">
-            <strong>Package-based Installation:</strong>
-            Kamiwaza will be installed from the .deb package configured in Settings.
-            The package URL is set to use the latest stable release (v0.9.2).
-            To change the package version, update the Kamiwaza Package URL in <a href="/settings">Settings</a>.
+            <strong>Source-based Installation:</strong>
+            Kamiwaza will be installed from source, providing full control over lite/full mode configuration.
+            The source is downloaded from S3 and built during deployment.
+            To update the source version, upload a new kamiwaza-main.zip to S3 or update the Kamiwaza Source URL in <a href="/settings">Settings</a>.
         </div>
 
         <div class="alert alert-warning">
             <strong>Note:</strong> Kamiwaza deployment takes 20-30 minutes to complete.
             The EC2 instance will continue installation after it launches.
+        </div>
+    </div>
+
+    <!-- App Garden Selection (for Kamiwaza deployments) -->
+    <div class="card" id="app_garden_config" style="display: none;">
+        <h3>App Garden - Pre-Install Applications</h3>
+        <p>Select applications from the App Garden to be automatically installed on your Kamiwaza instance.</p>
+
+        <div id="app_garden_loading" style="text-align: center; padding: 20px;">
+            <div style="display: inline-block; width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #3498db; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <p>Loading available apps...</p>
+        </div>
+
+        <div id="app_garden_error" style="display: none;">
+            <div class="alert alert-warning">
+                <strong>Unable to load apps:</strong> <span id="app_garden_error_msg"></span>
+            </div>
+        </div>
+
+        <div id="app_garden_content" style="display: none;">
+            <div style="margin-bottom: 15px;">
+                <input type="text" id="app_search" placeholder="Search apps..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+
+            <div id="app_garden_apps" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; max-height: 500px; overflow-y: auto;">
+                <!-- Apps will be loaded here -->
+            </div>
+
+            <div style="margin-top: 15px;">
+                <strong>Selected Apps (<span id="selected_apps_count">0</span>):</strong>
+                <div id="selected_apps_list" style="margin-top: 10px; min-height: 30px;">
+                    <em style="color: #999;">No apps selected</em>
+                </div>
+            </div>
+
+            <input type="hidden" id="selected_apps" name="selected_apps" value="[]">
+        </div>
+    </div>
+
+    <!-- Toolshed Selection (for Kamiwaza deployments) -->
+    <div class="card" id="toolshed_config" style="display: none;">
+        <h3>🔧 Toolshed - Pre-Install MCP Tools</h3>
+        <p>Select MCP tools from the Toolshed to be automatically installed on your Kamiwaza instance. Toolshed stage: <strong>{{ toolshed_stage }}</strong></p>
+
+        <div id="toolshed_loading" style="text-align: center; padding: 20px;">
+            <div style="display: inline-block; width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #3498db; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <p>Loading available tools...</p>
+        </div>
+
+        <div id="toolshed_error" style="display: none;">
+            <div class="alert alert-warning">
+                <strong>Unable to load tools:</strong> <span id="toolshed_error_msg"></span>
+            </div>
+        </div>
+
+        <div id="toolshed_content" style="display: none;">
+            <div style="margin-bottom: 15px;">
+                <input type="text" id="tool_search" placeholder="Search tools..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" onkeyup="filterTools()">
+            </div>
+
+            <div id="toolshed_tools" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; max-height: 500px; overflow-y: auto;">
+                <!-- Tools will be loaded here -->
+            </div>
+
+            <div style="margin-top: 15px;">
+                <strong>Selected Tools (<span id="selected_tools_count">0</span>):</strong>
+                <div id="selected_tools_list" style="margin-top: 10px; min-height: 30px;">
+                    <em style="color: #999;">No tools selected</em>
+                </div>
+            </div>
+
+            <input type="hidden" id="selected_tools" name="selected_tools" value="[]">
+        </div>
+
+        <!-- Custom MCP GitHub Import -->
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #e0e0e0;">
+            <h4>📦 Import Custom MCP Tools from GitHub</h4>
+            <p style="margin-bottom: 15px;">Add MCP tools directly from GitHub repositories. The tool will be validated and registered to your Kamiwaza instance.</p>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <input type="text" id="mcp_github_url_input" placeholder="https://github.com/owner/repo/tree/branch/path/to/tool" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <button type="button" onclick="validateAndAddMCPTool()" class="btn btn-secondary" style="white-space: nowrap;">Validate & Add</button>
+            </div>
+
+            <div id="mcp_validation_status" style="display: none; margin-bottom: 15px;">
+                <!-- Validation status will appear here -->
+            </div>
+
+            <div id="custom_mcp_list" style="margin-top: 15px;">
+                <strong>Custom MCP Tools (<span id="custom_mcp_count">0</span>):</strong>
+                <div id="custom_mcp_tools_list" style="margin-top: 10px; min-height: 30px;">
+                    <em style="color: #999;">No custom MCP tools added</em>
+                </div>
+            </div>
+
+            <input type="hidden" id="custom_mcp_github_urls" name="custom_mcp_github_urls" value="[]">
         </div>
     </div>
 
@@ -231,6 +327,12 @@ user2@example.com</pre>
 </form>
 
 <script>
+// Global state for app and tool selection
+let availableApps = [];
+let selectedApps = [];
+let availableTools = [];
+let selectedTools = [];
+
 // Toggle collapsible sections
 function toggleSection(contentId) {
     const content = document.getElementById(contentId);
@@ -252,6 +354,8 @@ function toggleDeploymentFields() {
 
     // Show/hide configuration sections
     document.getElementById('kamiwaza_config').style.display = isKamiwaza ? 'block' : 'none';
+    document.getElementById('app_garden_config').style.display = isKamiwaza ? 'block' : 'none';
+    document.getElementById('toolshed_config').style.display = isKamiwaza ? 'block' : 'none';
     document.getElementById('docker_config').style.display = isKamiwaza ? 'none' : 'block';
     document.getElementById('user_config').style.display = isKamiwaza ? 'none' : 'block';
 
@@ -259,10 +363,12 @@ function toggleDeploymentFields() {
     document.getElementById('deployment_info_docker').style.display = isKamiwaza ? 'none' : 'block';
     document.getElementById('deployment_info_kamiwaza').style.display = isKamiwaza ? 'block' : 'none';
 
-    // Fetch cached AMIs for Kamiwaza deployments
+    // Fetch cached AMIs, apps, and tools for Kamiwaza deployments
     if (isKamiwaza) {
         const region = document.getElementById('aws_region').value;
         fetchCachedAmis(region);
+        fetchAvailableApps();
+        fetchAvailableTools();
     }
 
     // Update instance type recommendations
@@ -346,6 +452,370 @@ function validateForm(event) {
     return true;
 }
 
+// Fetch available apps from App Garden
+async function fetchAvailableApps() {
+    const loadingEl = document.getElementById('app_garden_loading');
+    const errorEl = document.getElementById('app_garden_error');
+    const contentEl = document.getElementById('app_garden_content');
+
+    loadingEl.style.display = 'block';
+    errorEl.style.display = 'none';
+    contentEl.style.display = 'none';
+
+    try {
+        const response = await fetch('/api/available-apps');
+        const data = await response.json();
+
+        if (data.success && data.apps) {
+            availableApps = data.apps;
+            renderApps(availableApps);
+            loadingEl.style.display = 'none';
+            contentEl.style.display = 'block';
+        } else {
+            throw new Error(data.error || 'Failed to load apps');
+        }
+    } catch (error) {
+        console.error('Error fetching apps:', error);
+        document.getElementById('app_garden_error_msg').textContent = error.message;
+        loadingEl.style.display = 'none';
+        errorEl.style.display = 'block';
+    }
+}
+
+// Render apps in the grid
+function renderApps(apps) {
+    const container = document.getElementById('app_garden_apps');
+    container.innerHTML = '';
+
+    apps.forEach(app => {
+        const isSelected = selectedApps.includes(app.name);
+        const appCard = document.createElement('div');
+        appCard.className = 'app-card';
+        appCard.style.cssText = `
+            border: 2px solid ${isSelected ? '#3498db' : '#ddd'};
+            border-radius: 8px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: ${isSelected ? '#e3f2fd' : 'white'};
+        `;
+
+        const verifiedBadge = app.verified ? '<span style="background: #4caf50; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px; margin-left: 5px;">✓ Verified</span>' : '';
+        const riskBadge = app.risk_tier > 0 ? `<span style="background: #ff9800; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px; margin-left: 5px;">Risk: ${app.risk_tier}</span>` : '';
+
+        appCard.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div>
+                    <strong>${app.name}</strong> <small style="color: #666;">v${app.version}</small>
+                    ${verifiedBadge}
+                    ${riskBadge}
+                </div>
+                <input type="checkbox" ${isSelected ? 'checked' : ''} style="width: 20px; height: 20px;">
+            </div>
+            <p style="margin: 10px 0 0 0; font-size: 13px; color: #666;">${app.description || 'No description available'}</p>
+            <div style="margin-top: 8px;">
+                ${app.tags.map(tag => `<span style="background: #f0f0f0; padding: 2px 8px; border-radius: 3px; font-size: 11px; margin-right: 5px;">${tag}</span>`).join('')}
+            </div>
+        `;
+
+        appCard.addEventListener('click', () => toggleAppSelection(app.name));
+        container.appendChild(appCard);
+    });
+}
+
+// Toggle app selection
+function toggleAppSelection(appName) {
+    const index = selectedApps.indexOf(appName);
+    if (index > -1) {
+        selectedApps.splice(index, 1);
+    } else {
+        selectedApps.push(appName);
+    }
+    updateSelectedApps();
+    renderApps(availableApps);
+}
+
+// Update selected apps display and hidden input
+function updateSelectedApps() {
+    const countEl = document.getElementById('selected_apps_count');
+    const listEl = document.getElementById('selected_apps_list');
+    const hiddenInput = document.getElementById('selected_apps');
+
+    countEl.textContent = selectedApps.length;
+    hiddenInput.value = JSON.stringify(selectedApps);
+
+    if (selectedApps.length === 0) {
+        listEl.innerHTML = '<em style="color: #999;">No apps selected</em>';
+    } else {
+        listEl.innerHTML = selectedApps.map(name => {
+            const app = availableApps.find(a => a.name === name);
+            return `<span style="display: inline-block; background: #3498db; color: white; padding: 5px 10px; border-radius: 4px; margin: 3px;">${name} <span style="cursor: pointer; margin-left: 5px; font-weight: bold;" onclick="toggleAppSelection('${name}')">×</span></span>`;
+        }).join('');
+    }
+}
+
+// Search apps
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('app_search');
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const filtered = availableApps.filter(app =>
+                app.name.toLowerCase().includes(query) ||
+                app.description.toLowerCase().includes(query) ||
+                app.tags.some(tag => tag.toLowerCase().includes(query))
+            );
+            renderApps(filtered);
+        });
+    }
+});
+
+// ============================================================================
+// TOOLSHED TOOLS FUNCTIONS
+// ============================================================================
+
+// Fetch available tools from Toolshed
+async function fetchAvailableTools() {
+    const loadingEl = document.getElementById('toolshed_loading');
+    const errorEl = document.getElementById('toolshed_error');
+    const contentEl = document.getElementById('toolshed_content');
+
+    loadingEl.style.display = 'block';
+    errorEl.style.display = 'none';
+    contentEl.style.display = 'none';
+
+    try {
+        const response = await fetch('/api/available-tools');
+        const data = await response.json();
+
+        if (data.success && data.tools) {
+            availableTools = data.tools;
+            renderTools(availableTools);
+            loadingEl.style.display = 'none';
+            contentEl.style.display = 'block';
+        } else {
+            throw new Error(data.error || 'Failed to load tools');
+        }
+    } catch (error) {
+        console.error('Error fetching tools:', error);
+        document.getElementById('toolshed_error_msg').textContent = error.message;
+        loadingEl.style.display = 'none';
+        errorEl.style.display = 'block';
+    }
+}
+
+// Render tools in the grid
+function renderTools(tools) {
+    const container = document.getElementById('toolshed_tools');
+    container.innerHTML = '';
+
+    tools.forEach(tool => {
+        const isSelected = selectedTools.includes(tool.name);
+        const toolCard = document.createElement('div');
+        toolCard.className = 'tool-card';
+        toolCard.style.cssText = `
+            border: 2px solid ${isSelected ? '#2196F3' : '#ddd'};
+            border-radius: 8px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: ${isSelected ? '#e3f2fd' : 'white'};
+        `;
+
+        const configBadge = tool.requires_config ? '<span style="background: #ff9800; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px; margin-left: 5px;">⚙️ Config Required</span>' : '';
+
+        toolCard.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div>
+                    <strong>${tool.name}</strong> <small style="color: #666;">v${tool.version || 'latest'}</small>
+                    ${configBadge}
+                </div>
+                <input type="checkbox" ${isSelected ? 'checked' : ''} style="width: 20px; height: 20px;">
+            </div>
+            <p style="margin: 10px 0 0 0; font-size: 13px; color: #666;">${tool.description || 'No description available'}</p>
+            ${tool.requires_config ? `<p style="margin: 5px 0 0 0; font-size: 11px; color: #ff9800;">Config needed: ${(tool.env_vars || []).join(', ')}</p>` : ''}
+        `;
+
+        toolCard.addEventListener('click', () => toggleToolSelection(tool.name));
+        container.appendChild(toolCard);
+    });
+}
+
+// Toggle tool selection
+function toggleToolSelection(toolName) {
+    const index = selectedTools.indexOf(toolName);
+    if (index > -1) {
+        selectedTools.splice(index, 1);
+    } else {
+        selectedTools.push(toolName);
+    }
+    updateSelectedTools();
+    renderTools(availableTools);
+}
+
+// Update selected tools display and hidden input
+function updateSelectedTools() {
+    const countEl = document.getElementById('selected_tools_count');
+    const listEl = document.getElementById('selected_tools_list');
+    const hiddenInput = document.getElementById('selected_tools');
+
+    countEl.textContent = selectedTools.length;
+    hiddenInput.value = JSON.stringify(selectedTools);
+
+    if (selectedTools.length === 0) {
+        listEl.innerHTML = '<em style="color: #999;">No tools selected</em>';
+    } else {
+        listEl.innerHTML = selectedTools.map(name => {
+            return `<span style="display: inline-block; background: #2196F3; color: white; padding: 5px 10px; border-radius: 4px; margin: 3px;">${name} <span style="cursor: pointer; margin-left: 5px; font-weight: bold;" onclick="toggleToolSelection('${name}')">×</span></span>`;
+        }).join('');
+    }
+}
+
+// Filter tools
+function filterTools() {
+    const query = document.getElementById('tool_search').value.toLowerCase();
+    const filtered = availableTools.filter(tool =>
+        tool.name.toLowerCase().includes(query) ||
+        tool.description.toLowerCase().includes(query)
+    );
+    renderTools(filtered);
+}
+
+// ============================================================================
+// CUSTOM MCP GITHUB IMPORT FUNCTIONS
+// ============================================================================
+
+let customMCPTools = [];
+
+// Validate and add MCP tool from GitHub
+async function validateAndAddMCPTool() {
+    const urlInput = document.getElementById('mcp_github_url_input');
+    const statusDiv = document.getElementById('mcp_validation_status');
+    const githubUrl = urlInput.value.trim();
+
+    if (!githubUrl) {
+        showMCPStatus('error', 'Please enter a GitHub URL');
+        return;
+    }
+
+    // Show loading status
+    statusDiv.style.display = 'block';
+    statusDiv.innerHTML = '<div style="padding: 10px; background: #e3f2fd; border: 1px solid #2196F3; border-radius: 4px;"><strong>⏳ Validating...</strong> Checking MCP tool structure...</div>';
+
+    try {
+        const response = await fetch('/api/mcp/validate-github', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                csrf_token: '{{ csrf_token }}',
+                github_url: githubUrl
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Validation successful
+            const toolName = data.tool_config.name;
+            const toolVersion = data.tool_config.version || 'latest';
+
+            // Check if already added
+            if (customMCPTools.some(t => t.url === githubUrl)) {
+                showMCPStatus('warning', `Tool "${toolName}" is already added`);
+                return;
+            }
+
+            // Add to list
+            customMCPTools.push({
+                url: githubUrl,
+                name: toolName,
+                version: toolVersion,
+                config: data.tool_config
+            });
+
+            showMCPStatus('success', `✓ Validated: "${toolName}" v${toolVersion}`);
+            urlInput.value = '';
+            updateCustomMCPList();
+
+            // Hide status after 3 seconds
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 3000);
+        } else {
+            // Validation failed
+            let errorHtml = `<div style="padding: 10px; background: #ffebee; border: 1px solid #f44336; border-radius: 4px;">
+                <strong>✗ Validation Failed</strong><br>
+                ${data.error || 'Unknown error'}
+            `;
+
+            if (data.validation_logs && data.validation_logs.length > 0) {
+                errorHtml += '<br><br><details><summary>View validation logs</summary><pre style="margin-top: 10px; padding: 10px; background: #fff; border: 1px solid #ddd; border-radius: 4px; max-height: 200px; overflow-y: auto; font-size: 12px;">';
+                errorHtml += data.validation_logs.join('\n');
+                errorHtml += '</pre></details>';
+            }
+            errorHtml += '</div>';
+
+            statusDiv.innerHTML = errorHtml;
+        }
+    } catch (error) {
+        showMCPStatus('error', `Request failed: ${error.message}`);
+    }
+}
+
+// Show MCP validation status
+function showMCPStatus(type, message) {
+    const statusDiv = document.getElementById('mcp_validation_status');
+    let bgColor, borderColor;
+
+    switch (type) {
+        case 'success':
+            bgColor = '#e8f5e9';
+            borderColor = '#4caf50';
+            break;
+        case 'warning':
+            bgColor = '#fff3e0';
+            borderColor = '#ff9800';
+            break;
+        case 'error':
+            bgColor = '#ffebee';
+            borderColor = '#f44336';
+            break;
+        default:
+            bgColor = '#f5f5f5';
+            borderColor = '#9e9e9e';
+    }
+
+    statusDiv.style.display = 'block';
+    statusDiv.innerHTML = `<div style="padding: 10px; background: ${bgColor}; border: 1px solid ${borderColor}; border-radius: 4px;">${message}</div>`;
+}
+
+// Remove custom MCP tool
+function removeCustomMCPTool(index) {
+    customMCPTools.splice(index, 1);
+    updateCustomMCPList();
+}
+
+// Update custom MCP tools list display
+function updateCustomMCPList() {
+    const countEl = document.getElementById('custom_mcp_count');
+    const listEl = document.getElementById('custom_mcp_tools_list');
+    const hiddenInput = document.getElementById('custom_mcp_github_urls');
+
+    countEl.textContent = customMCPTools.length;
+    hiddenInput.value = JSON.stringify(customMCPTools.map(t => t.url));
+
+    if (customMCPTools.length === 0) {
+        listEl.innerHTML = '<em style="color: #999;">No custom MCP tools added</em>';
+    } else {
+        listEl.innerHTML = customMCPTools.map((tool, index) => {
+            return `<div style="display: inline-block; background: #673ab7; color: white; padding: 8px 12px; border-radius: 4px; margin: 3px;">
+                <strong>${tool.name}</strong> <small>v${tool.version}</small>
+                <span style="cursor: pointer; margin-left: 8px; font-weight: bold;" onclick="removeCustomMCPTool(${index})">×</span>
+            </div>`;
+        }).join('');
+    }
+}
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     toggleDeploymentFields();
@@ -364,4 +834,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
+
+<style>
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+.app-card:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+</style>
 {% endblock %}

@@ -29,7 +29,6 @@ class KamiwazaEC2Stack(Stack):
         instance_type = self.node.try_get_context("instanceType") or "t3.medium"
         ami_id = self.node.try_get_context("amiId")
         vpc_id = self.node.try_get_context("vpcId")
-        subnet_id = self.node.try_get_context("subnetId")
         key_pair_name = self.node.try_get_context("keyPairName")
         user_data_b64 = self.node.try_get_context("userData")
 
@@ -136,8 +135,6 @@ class KamiwazaEC2Stack(Stack):
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PUBLIC
-            ) if not subnet_id else ec2.SubnetSelection(
-                subnets=[ec2.Subnet.from_subnet_id(self, "Subnet", subnet_id)]
             ),
             security_group=security_group,
             role=role,

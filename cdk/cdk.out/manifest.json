@@ -1,28 +1,28 @@
 {
   "version": "48.0.0",
   "artifacts": {
-    "kamiwaza-job-29.assets": {
+    "kamiwaza-job-40.assets": {
       "type": "cdk:asset-manifest",
       "properties": {
-        "file": "kamiwaza-job-29.assets.json",
+        "file": "kamiwaza-job-40.assets.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
       }
     },
-    "kamiwaza-job-29": {
+    "kamiwaza-job-40": {
       "type": "aws:cloudformation:stack",
       "environment": "aws://916994818137/us-east-1",
       "properties": {
-        "templateFile": "kamiwaza-job-29.template.json",
+        "templateFile": "kamiwaza-job-40.template.json",
         "terminationProtection": false,
         "validateOnSynth": false,
         "assumeRoleArn": "arn:${AWS::Partition}:iam::916994818137:role/cdk-hnb659fds-deploy-role-916994818137-us-east-1",
         "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::916994818137:role/cdk-hnb659fds-cfn-exec-role-916994818137-us-east-1",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-916994818137-us-east-1/4f89f851e966c10431332dbe7d226290e05a3fc1f4bcfd97744f4ccc4a270670.json",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-916994818137-us-east-1/bc32a6db98555fbb3641ff9b52ec5fe0fc791b240d278d0e38da247b516bfaeb.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
         "additionalDependencies": [
-          "kamiwaza-job-29.assets"
+          "kamiwaza-job-40.assets"
         ],
         "lookupRole": {
           "arn": "arn:${AWS::Partition}:iam::916994818137:role/cdk-hnb659fds-lookup-role-916994818137-us-east-1",
@@ -31,83 +31,83 @@
         }
       },
       "dependencies": [
-        "kamiwaza-job-29.assets"
+        "kamiwaza-job-40.assets"
       ],
       "metadata": {
-        "/kamiwaza-job-29/KamiwazaSG/Resource": [
+        "/kamiwaza-job-40/KamiwazaSG/Resource": [
           {
             "type": "aws:cdk:logicalId",
             "data": "KamiwazaSGFD941D5B"
           }
         ],
-        "/kamiwaza-job-29/InstanceRole/Resource": [
+        "/kamiwaza-job-40/InstanceRole/Resource": [
           {
             "type": "aws:cdk:logicalId",
             "data": "InstanceRole3CCE2F1D"
           }
         ],
-        "/kamiwaza-job-29/KamiwazaInstance/InstanceProfile": [
+        "/kamiwaza-job-40/KamiwazaInstance/InstanceProfile": [
           {
             "type": "aws:cdk:logicalId",
             "data": "KamiwazaInstanceInstanceProfileEFBAE96B"
           }
         ],
-        "/kamiwaza-job-29/KamiwazaInstance/Resource": [
+        "/kamiwaza-job-40/KamiwazaInstance/Resource": [
           {
             "type": "aws:cdk:logicalId",
             "data": "KamiwazaInstance361554A9"
           }
         ],
-        "/kamiwaza-job-29/InstanceId": [
+        "/kamiwaza-job-40/InstanceId": [
           {
             "type": "aws:cdk:logicalId",
             "data": "InstanceId"
           }
         ],
-        "/kamiwaza-job-29/PublicIP": [
+        "/kamiwaza-job-40/PublicIP": [
           {
             "type": "aws:cdk:logicalId",
             "data": "PublicIP"
           }
         ],
-        "/kamiwaza-job-29/PrivateIP": [
+        "/kamiwaza-job-40/PrivateIP": [
           {
             "type": "aws:cdk:logicalId",
             "data": "PrivateIP"
           }
         ],
-        "/kamiwaza-job-29/SecurityGroupId": [
+        "/kamiwaza-job-40/SecurityGroupId": [
           {
             "type": "aws:cdk:logicalId",
             "data": "SecurityGroupId"
           }
         ],
-        "/kamiwaza-job-29/VpcId": [
+        "/kamiwaza-job-40/VpcId": [
           {
             "type": "aws:cdk:logicalId",
             "data": "VpcId"
           }
         ],
-        "/kamiwaza-job-29/CDKMetadata/Default": [
+        "/kamiwaza-job-40/CDKMetadata/Default": [
           {
             "type": "aws:cdk:logicalId",
             "data": "CDKMetadata"
           }
         ],
-        "/kamiwaza-job-29/BootstrapVersion": [
+        "/kamiwaza-job-40/BootstrapVersion": [
           {
             "type": "aws:cdk:logicalId",
             "data": "BootstrapVersion"
           }
         ],
-        "/kamiwaza-job-29/CheckBootstrapVersion": [
+        "/kamiwaza-job-40/CheckBootstrapVersion": [
           {
             "type": "aws:cdk:logicalId",
             "data": "CheckBootstrapVersion"
           }
         ]
       },
-      "displayName": "kamiwaza-job-29"
+      "displayName": "kamiwaza-job-40"
     },
     "Tree": {
       "type": "cdk:tree",

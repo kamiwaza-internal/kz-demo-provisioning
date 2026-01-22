@@ -427,20 +427,20 @@ def generate_user_data_script(job: Job, db) -> str:
 def generate_kamiwaza_user_data(job: Job, db) -> str:
     """Generate user_data script for Kamiwaza full stack deployment"""
 
-    # Read the deployment script
-    script_path = Path(__file__).parent.parent / "scripts" / "deploy_kamiwaza_full.sh"
+    # Read the deployment script - now using source-based installation
+    script_path = Path(__file__).parent.parent / "scripts" / "deploy_kamiwaza_from_source.sh"
     if not script_path.exists():
         raise Exception(f"Kamiwaza deployment script not found at {script_path}")
 
     deployment_script = script_path.read_text()
 
-    # Get package URL - check job tags first, then fall back to environment
-    package_url = None
+    # Get source URL - check job tags first, then fall back to environment
+    source_url = None
     if job.tags and isinstance(job.tags, dict):
-        package_url = job.tags.get("PackageURL")
+        source_url = job.tags.get("SourceURL")
 
-    if not package_url:
-        package_url = os.environ.get("KAMIWAZA_PACKAGE_URL", "https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb")
+    if not source_url:
+        source_url = os.environ.get("KAMIWAZA_SOURCE_URL", "https://kamiwaza-provisioning-source.s3.us-west-2.amazonaws.com/kamiwaza-release-0.9.2.zip")
 
     # Get deployment mode from job (defaults to 'full' for backward compatibility)
     deployment_mode = getattr(job, 'kamiwaza_deployment_mode', 'full') or 'full'
@@ -449,8 +449,8 @@ def generate_kamiwaza_user_data(job: Job, db) -> str:
     user_data_lines = [
         "#!/bin/bash",
         "",
-        "# Kamiwaza Deployment Configuration",
-        f"export KAMIWAZA_PACKAGE_URL='{package_url}'",
+        "# Kamiwaza Deployment Configuration (Source-based Installation)",
+        f"export KAMIWAZA_SOURCE_URL='{source_url}'",
         f"export KAMIWAZA_DEPLOYMENT_MODE='{deployment_mode}'",
     ]
 
@@ -724,23 +724,135 @@ def execute_kamiwaza_provisioning(self, job_id: int):
                 elif job.kamiwaza_repo:
                     del os.environ["KAMIWAZA_URL"]
 
+                # Get selected apps from job configuration
+                selected_apps = job.selected_apps if hasattr(job, 'selected_apps') and job.selected_apps else None
+
                 hydration_success, hydration_summary, hydration_logs = hydrator.hydrate_apps_and_tools(
-                    callback=lambda line: log_message("info", line)
+                    callback=lambda line: log_message("info", line),
+                    selected_apps=selected_apps
                 )
 
                 if hydration_success:
-                    log_message("info", "✓ App and tool hydration completed successfully")
-                    job.status = "success"
-                    job.completed_at = datetime.utcnow()
+                    log_message("info", "✓ App hydration completed successfully")
                 else:
                     log_message("warning", f"⚠ App hydration failed: {hydration_summary}")
                     log_message("warning", "User provisioning succeeded but app hydration failed")
-                    job.status = "success"  # Still mark as success since users were created
-                    job.completed_at = datetime.utcnow()
+
+                # Deploy tools from toolshed if selected
+                selected_tools = job.selected_tools if hasattr(job, 'selected_tools') and job.selected_tools else None
+                if selected_tools and len(selected_tools) > 0:
+                    log_message("info", "")
+                    log_message("info", "Starting tool deployment from toolshed...")
+
+                    try:
+                        from app.kamiwaza_tools_provisioner import KamiwazaToolsProvisioner
+                        from app.config import settings
+
+                        # Override Kamiwaza URL for tools provisioner
+                        provisioner_url = job.kamiwaza_repo if job.kamiwaza_repo else f"https://{job.public_ip}"
+
+                        tools_provisioner = KamiwazaToolsProvisioner(
+                            kamiwaza_url=provisioner_url,
+                            username=os.environ.get("KAMIWAZA_USERNAME", "admin"),
+                            password=os.environ.get("KAMIWAZA_PASSWORD", "kamiwaza"),
+                            toolshed_stage=settings.toolshed_stage
+                        )
+
+                        tools_success, tools_summary, tools_logs = tools_provisioner.provision_tools(
+                            callback=lambda line: log_message("info", line),
+                            selected_tools=selected_tools,
+                            sync_first=True
+                        )
+
+                        if tools_success:
+                            log_message("info", "✓ Tool deployment completed successfully")
+                            # Update tool deployment status
+                            if not job.tool_deployment_status:
+                                job.tool_deployment_status = {}
+                            for tool_name in selected_tools:
+                                job.tool_deployment_status[tool_name] = "success"
+                        else:
+                            log_message("warning", f"⚠ Tool deployment failed: {tools_summary}")
+                            # Mark failed tools
+                            if not job.tool_deployment_status:
+                                job.tool_deployment_status = {}
+                            for tool_name in selected_tools:
+                                if tool_name not in job.tool_deployment_status:
+                                    job.tool_deployment_status[tool_name] = "failed"
+
+                    except Exception as tool_error:
+                        log_message("error", f"✗ Tool deployment error: {str(tool_error)}")
+                        log_message("warning", "User provisioning succeeded but tool deployment encountered an error")
+                        # Mark all tools as failed
+                        if not job.tool_deployment_status:
+                            job.tool_deployment_status = {}
+                        for tool_name in selected_tools:
+                            job.tool_deployment_status[tool_name] = "failed"
+
+                # Import custom MCP tools from GitHub if provided
+                custom_mcp_urls = job.custom_mcp_github_urls if hasattr(job, 'custom_mcp_github_urls') and job.custom_mcp_github_urls else None
+                if custom_mcp_urls and len(custom_mcp_urls) > 0:
+                    log_message("info", "")
+                    log_message("info", f"Starting custom MCP import from GitHub ({len(custom_mcp_urls)} tools)...")
+
+                    try:
+                        from app.mcp_github_importer import MCPGitHubImporter
+                        from app.kamiwaza_tools_provisioner import KamiwazaToolsProvisioner
+                        from app.config import settings
+
+                        provisioner_url = job.kamiwaza_repo if job.kamiwaza_repo else f"https://{job.public_ip}"
+
+                        # Authenticate with Kamiwaza
+                        tools_provisioner = KamiwazaToolsProvisioner(
+                            kamiwaza_url=provisioner_url,
+                            username=os.environ.get("KAMIWAZA_USERNAME", "admin"),
+                            password=os.environ.get("KAMIWAZA_PASSWORD", "kamiwaza"),
+                            toolshed_stage=settings.toolshed_stage
+                        )
+
+                        auth_success, token, auth_error = tools_provisioner.authenticate()
+                        if not auth_success:
+                            log_message("error", f"✗ Authentication failed for MCP import: {auth_error}")
+                        else:
+                            # Create importer
+                            importer = MCPGitHubImporter()
+
+                            for github_url in custom_mcp_urls:
+                                log_message("info", f"  • Importing MCP from: {github_url}")
+
+                                # Validate
+                                validate_success, tool_config, validation_logs = importer.validate_mcp_repo(github_url)
+
+                                if not validate_success:
+                                    log_message("warning", f"    ✗ Validation failed for {github_url}")
+                                    for log_line in validation_logs[-5:]:  # Show last 5 lines
+                                        log_message("warning", f"      {log_line}")
+                                    continue
+
+                                # Import to Kamiwaza
+                                import_success, import_msg = importer.import_to_kamiwaza(
+                                    provisioner_url,
+                                    token,
+                                    tool_config,
+                                    github_url
+                                )
+
+                                if import_success:
+                                    log_message("info", f"    ✓ {import_msg}")
+                                else:
+                                    log_message("warning", f"    ✗ {import_msg}")
+
+                    except Exception as mcp_error:
+                        log_message("error", f"✗ Custom MCP import error: {str(mcp_error)}")
+                        log_message("warning", "User provisioning succeeded but custom MCP import encountered an error")
+
+                # Mark job as complete
+                job.status = "success"
+                job.completed_at = datetime.utcnow()
 
             except Exception as hydration_error:
-                log_message("error", f"✗ App hydration error: {str(hydration_error)}")
-                log_message("warning", "User provisioning succeeded but app hydration encountered an error")
+                log_message("error", f"✗ App/tool deployment error: {str(hydration_error)}")
+                log_message("warning", "User provisioning succeeded but app/tool deployment encountered an error")
                 job.status = "success"  # Still mark as success since users were created
                 job.completed_at = datetime.utcnow()
         else:
@@ -1197,6 +1309,121 @@ def check_kamiwaza_readiness(self, job_id: int):
                         )
                         db.add(log)
                         db.commit()
+
+                        # Deploy apps and tools if selected (for Kamiwaza-only deployments without user provisioning)
+                        if not job.users_data or len(job.users_data) == 0:
+                            # This is a Kamiwaza-only deployment, deploy apps and tools now
+                            selected_apps = job.selected_apps if hasattr(job, 'selected_apps') and job.selected_apps else None
+                            selected_tools = job.selected_tools if hasattr(job, 'selected_tools') and job.selected_tools else None
+
+                            if (selected_apps and len(selected_apps) > 0) or (selected_tools and len(selected_tools) > 0):
+                                try:
+                                    # Deploy apps
+                                    if selected_apps and len(selected_apps) > 0:
+                                        logger.info(f"Deploying {len(selected_apps)} apps to Kamiwaza for job {job_id}")
+                                        log = JobLog(
+                                            job_id=job.id,
+                                            level="info",
+                                            message=f"Starting automatic app deployment: {', '.join(selected_apps)}",
+                                            source="readiness-check"
+                                        )
+                                        db.add(log)
+                                        db.commit()
+
+                                        from app.kamiwaza_app_hydrator import KamiwazaAppHydrator
+                                        hydrator = KamiwazaAppHydrator()
+                                        hydrator.kamiwaza_url = f"https://{job.public_ip}"
+
+                                        app_success, app_summary, app_logs = hydrator.hydrate_apps_and_tools(
+                                            callback=None,
+                                            selected_apps=selected_apps
+                                        )
+
+                                        if app_success:
+                                            log = JobLog(
+                                                job_id=job.id,
+                                                level="info",
+                                                message=f"✓ Apps deployed successfully",
+                                                source="readiness-check"
+                                            )
+                                            db.add(log)
+                                        else:
+                                            log = JobLog(
+                                                job_id=job.id,
+                                                level="warning",
+                                                message=f"⚠ App deployment failed: {app_summary}",
+                                                source="readiness-check"
+                                            )
+                                            db.add(log)
+                                        db.commit()
+
+                                    # Deploy tools
+                                    if selected_tools and len(selected_tools) > 0:
+                                        logger.info(f"Deploying {len(selected_tools)} tools to Kamiwaza for job {job_id}")
+                                        log = JobLog(
+                                            job_id=job.id,
+                                            level="info",
+                                            message=f"Starting automatic tool deployment: {', '.join(selected_tools)}",
+                                            source="readiness-check"
+                                        )
+                                        db.add(log)
+                                        db.commit()
+
+                                        from app.kamiwaza_tools_provisioner import KamiwazaToolsProvisioner
+                                        from app.config import settings
+
+                                        tools_provisioner = KamiwazaToolsProvisioner(
+                                            kamiwaza_url=f"https://{job.public_ip}",
+                                            username=settings.kamiwaza_username,
+                                            password=settings.kamiwaza_password,
+                                            toolshed_stage=settings.toolshed_stage
+                                        )
+
+                                        tools_success, tools_summary, tools_logs = tools_provisioner.provision_tools(
+                                            callback=None,
+                                            selected_tools=selected_tools,
+                                            sync_first=True
+                                        )
+
+                                        if tools_success:
+                                            log = JobLog(
+                                                job_id=job.id,
+                                                level="info",
+                                                message=f"✓ Tools deployed successfully",
+                                                source="readiness-check"
+                                            )
+                                            db.add(log)
+                                            # Update tool deployment status
+                                            if not job.tool_deployment_status:
+                                                job.tool_deployment_status = {}
+                                            for tool_name in selected_tools:
+                                                job.tool_deployment_status[tool_name] = "success"
+                                        else:
+                                            log = JobLog(
+                                                job_id=job.id,
+                                                level="warning",
+                                                message=f"⚠ Tool deployment failed: {tools_summary}",
+                                                source="readiness-check"
+                                            )
+                                            db.add(log)
+                                            # Mark failed tools
+                                            if not job.tool_deployment_status:
+                                                job.tool_deployment_status = {}
+                                            for tool_name in selected_tools:
+                                                job.tool_deployment_status[tool_name] = "failed"
+
+                                        db.commit()
+
+                                except Exception as deploy_error:
+                                    logger.error(f"Error deploying apps/tools for job {job_id}: {str(deploy_error)}")
+                                    log = JobLog(
+                                        job_id=job.id,
+                                        level="error",
+                                        message=f"✗ App/tool deployment error: {str(deploy_error)}",
+                                        source="readiness-check"
+                                    )
+                                    db.add(log)
+                                    db.commit()
 
                         # Trigger automatic AMI creation (if not already in progress)
                         if not job.ami_creation_status or job.ami_creation_status == "pending":

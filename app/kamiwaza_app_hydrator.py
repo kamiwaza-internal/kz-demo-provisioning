@@ -208,13 +208,15 @@ class KamiwazaAppHydrator:
 
     def hydrate_apps_and_tools(
         self,
-        callback=None
+        callback=None,
+        selected_apps=None
     ) -> Tuple[bool, str, List[str]]:
         """
         Hydrate Kamiwaza with apps and tools from app garden.
 
         Args:
             callback: Optional callback function(line: str) to receive log output
+            selected_apps: Optional list of app names to deploy. If None, deploys all apps.
 
         Returns:
             Tuple of (success, summary_message, list of log lines)
@@ -259,6 +261,17 @@ class KamiwazaAppHydrator:
                 return (False, error_msg, log_lines)
             log(f"✓ Found {len(apps_data)} apps in app garden")
             log("")
+
+            # Filter apps if selected_apps is provided
+            if selected_apps is not None and len(selected_apps) > 0:
+                log(f"📋 Filtering to selected apps: {', '.join(selected_apps)}")
+                apps_data = [app for app in apps_data if app.get("name") in selected_apps]
+                log(f"✓ Will deploy {len(apps_data)} selected app(s)")
+                log("")
+
+                if len(apps_data) == 0:
+                    log("⚠ No matching apps found in app garden")
+                    return (True, "No matching apps to deploy", log_lines)
 
             # Step 4: Upload apps
             log("Step 4: Uploading apps to Kamiwaza...")

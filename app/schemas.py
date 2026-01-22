@@ -60,6 +60,9 @@ class JobCreate(BaseModel):
     # Docker (required for docker deployment type, optional for kamiwaza)
     dockerhub_images: Optional[List[ContainerConfig]] = []
 
+    # App Garden (optional for kamiwaza deployments)
+    selected_apps: Optional[List[str]] = []  # List of app names to pre-install
+
     # Notification
     requester_email: EmailStr
 
@@ -112,6 +115,7 @@ class JobResponse(BaseModel):
     kamiwaza_ready: Optional[bool] = False
     kamiwaza_check_attempts: Optional[int] = 0
     kamiwaza_checked_at: Optional[datetime] = None
+    selected_apps: Optional[List[str]] = []
     created_at: datetime
     started_at: Optional[datetime]
     completed_at: Optional[datetime]

@@ -1,0 +1,669 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Tools + Apps - Kamiwaza Deployment Manager{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>🛠️ Manage Tools + Apps</h2>
+    <p style="margin-top: 0.5rem; color: #666;">Deploy applications and MCP tools to your Kamiwaza instances</p>
+</div>
+
+<div class="card" style="border-left: 4px solid #2196F3; background: #E3F2FD;">
+    <h3 style="margin-top: 0; color: #1976D2;">🎯 Target Kamiwaza Instance</h3>
+
+    {% if available_instances %}
+    <div class="form-group" style="margin-top: 1rem;">
+        <label for="target_instance" style="font-weight: bold; color: #1976D2;">Select Kamiwaza Instance:</label>
+        <select id="target_instance" style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid #90CAF9; font-size: 1rem;" onchange="updateTargetInstance()">
+            <option value="">-- Select a deployed instance --</option>
+            {% for instance in available_instances %}
+            <option value="{{ instance.id }}" data-url="{{ instance.url }}" data-name="{{ instance.name }}" data-completed="{{ instance.completed_at }}">
+                {{ instance.name }} - {{ instance.url }} (deployed: {{ instance.completed_at }})
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div id="selected_url_display" style="font-size: 1rem; margin-top: 1rem; display: none;">
+        <strong>Selected URL:</strong> <code id="selected_url_code" style="background: #fff; padding: 0.25rem 0.5rem; border-radius: 3px; font-size: 0.95rem;"></code>
+        <span id="load_status" style="margin-left: 1rem; color: #4caf50; display: none;">✓ Ready</span>
+    </div>
+
+    <div class="alert alert-info" style="margin-top: 1rem;">
+        <strong>💡 Tip:</strong> Select from your recently deployed Kamiwaza instances. Toolshed will sync from <strong>{{ toolshed_stage }}</strong> stage.
+    </div>
+    {% else %}
+    <div class="alert alert-warning" style="margin-top: 1rem;">
+        <strong>No Kamiwaza instances found.</strong><br>
+        Deploy a Kamiwaza instance first using <a href="/jobs/new" style="color: #1976D2; text-decoration: underline;">New Job</a>.
+    </div>
+    {% endif %}
+</div>
+
+<!-- Tabs -->
+<div class="card" id="main-content" style="display: none;">
+    <div style="border-bottom: 2px solid #e0e0e0; margin-bottom: 1.5rem;">
+        <button class="tab-button active" onclick="switchTab('apps')" id="apps-tab-btn">
+            📦 Applications
+        </button>
+        <button class="tab-button" onclick="switchTab('tools')" id="tools-tab-btn">
+            🔧 MCP Tools
+        </button>
+        <button class="tab-button" onclick="switchTab('review')" id="review-tab-btn">
+            ✅ Review & Deploy
+        </button>
+    </div>
+
+    <!-- Applications Tab -->
+    <div id="apps-tab" class="tab-content">
+        <div id="apps-loading" style="text-align: center; padding: 2rem;">
+            <div style="font-size: 2rem;">⏳</div>
+            <p>Loading available applications...</p>
+        </div>
+
+        <div id="apps-error" class="alert alert-error" style="display: none;"></div>
+
+        <div id="apps-container" style="display: none;">
+            <div style="margin-bottom: 1rem;">
+                <input type="text" id="app-search" placeholder="🔍 Search applications..."
+                       style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid #ddd;"
+                       onkeyup="filterApps()">
+            </div>
+
+            <div id="apps-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;">
+                <!-- Apps will be loaded here -->
+            </div>
+
+            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #ddd;">
+                <p id="apps-selected-count" style="margin-bottom: 0.5rem; color: #666;">
+                    <strong>Selected:</strong> 0 applications
+                </p>
+                <button onclick="selectAllApps()" class="btn btn-secondary" style="margin-right: 0.5rem;">
+                    ✓ Select All
+                </button>
+                <button onclick="deselectAllApps()" class="btn btn-secondary">
+                    ✗ Deselect All
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MCP Tools Tab -->
+    <div id="tools-tab" class="tab-content" style="display: none;">
+        <div id="tools-loading" style="text-align: center; padding: 2rem;">
+            <div style="font-size: 2rem;">⏳</div>
+            <p>Syncing toolshed and loading available tools...</p>
+        </div>
+
+        <div id="tools-error" class="alert alert-error" style="display: none;"></div>
+
+        <div id="tools-container" style="display: none;">
+            <div style="margin-bottom: 1rem;">
+                <input type="text" id="tool-search" placeholder="🔍 Search MCP tools..."
+                       style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid #ddd;"
+                       onkeyup="filterTools()">
+            </div>
+
+            <div id="tools-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;">
+                <!-- Tools will be loaded here -->
+            </div>
+
+            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #ddd;">
+                <p id="tools-selected-count" style="margin-bottom: 0.5rem; color: #666;">
+                    <strong>Selected:</strong> 0 tools
+                </p>
+                <button onclick="selectAllTools()" class="btn btn-secondary" style="margin-right: 0.5rem;">
+                    ✓ Select All
+                </button>
+                <button onclick="deselectAllTools()" class="btn btn-secondary">
+                    ✗ Deselect All
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Review & Deploy Tab -->
+    <div id="review-tab" class="tab-content" style="display: none;">
+        <h3>Review Selection</h3>
+
+        <div id="review-empty" style="text-align: center; padding: 3rem; color: #999;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">📦</div>
+            <p>No apps or tools selected yet.</p>
+            <p>Go to Applications or MCP Tools tabs to make a selection.</p>
+        </div>
+
+        <div id="review-content" style="display: none;">
+            <!-- Selected Apps -->
+            <div id="review-apps-section" style="display: none; margin-bottom: 2rem;">
+                <h4 style="color: #ff9900;">📦 Selected Applications (<span id="review-apps-count">0</span>)</h4>
+                <div id="review-apps-list" style="margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                    <!-- App tags will appear here -->
+                </div>
+            </div>
+
+            <!-- Selected Tools -->
+            <div id="review-tools-section" style="display: none; margin-bottom: 2rem;">
+                <h4 style="color: #2196F3;">🔧 Selected MCP Tools (<span id="review-tools-count">0</span>)</h4>
+                <div id="review-tools-list" style="margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                    <!-- Tool tags will appear here -->
+                </div>
+            </div>
+
+            <!-- Deployment Summary -->
+            <div style="background: #f5f5f5; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+                <strong>Deployment Summary:</strong>
+                <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+                    <li><strong>Target:</strong> <span id="review-target-url">Not selected</span></li>
+                    <li><strong>Applications:</strong> <span id="review-total-apps">0</span></li>
+                    <li><strong>MCP Tools:</strong> <span id="review-total-tools">0</span></li>
+                    <li><strong>Total Items:</strong> <span id="review-total-items">0</span></li>
+                </ul>
+            </div>
+
+            <!-- Deploy Button -->
+            <div style="margin-top: 1.5rem;">
+                <button id="deploy-all-btn" onclick="deployAll()" class="btn btn-primary" style="font-size: 1.1rem; padding: 0.75rem 1.5rem;">
+                    🚀 Deploy Selected Items
+                </button>
+                <button onclick="clearAll()" class="btn btn-danger" style="margin-left: 0.5rem;">
+                    ✗ Clear All
+                </button>
+            </div>
+
+            <!-- Deployment Status -->
+            <div id="deploy-status" style="margin-top: 1.5rem; display: none;"></div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_styles %}
+<style>
+.tab-button {
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #666;
+}
+
+.tab-button:hover {
+    background: #f5f5f5;
+    color: #333;
+}
+
+.tab-button.active {
+    border-bottom-color: #ff9900;
+    color: #333;
+    font-weight: 600;
+}
+
+.app-card, .tool-card {
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    padding: 1rem;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.app-card:hover, .tool-card:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.app-card.selected, .tool-card.selected {
+    border-color: #ff9900;
+    background: #fff8e1;
+}
+
+.tag {
+    background: #ff9900;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.tag .remove-btn {
+    background: rgba(255,255,255,0.3);
+    border: none;
+    color: white;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+}
+
+.tag .remove-btn:hover {
+    background: rgba(255,255,255,0.5);
+}
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const csrfToken = '{{ csrf_token }}';
+let selectedJobId = null;
+let kamiwazaUrl = '{{ kamiwaza_url }}';
+let availableApps = [];
+let availableTools = [];
+let selectedApps = new Set();
+let selectedTools = new Set();
+
+function updateTargetInstance() {
+    const select = document.getElementById('target_instance');
+    const selectedOption = select.options[select.selectedIndex];
+
+    if (!selectedOption.value) {
+        document.getElementById('selected_url_display').style.display = 'none';
+        document.getElementById('main-content').style.display = 'none';
+        return;
+    }
+
+    selectedJobId = selectedOption.value;
+    kamiwazaUrl = selectedOption.dataset.url;
+
+    document.getElementById('selected_url_code').textContent = kamiwazaUrl;
+    document.getElementById('selected_url_display').style.display = 'block';
+    document.getElementById('main-content').style.display = 'block';
+    document.getElementById('load_status').style.display = 'inline';
+
+    // Load apps and tools
+    loadAvailableApps();
+    loadAvailableTools();
+}
+
+function switchTab(tabName) {
+    // Hide all tabs
+    document.querySelectorAll('.tab-content').forEach(tab => tab.style.display = 'none');
+    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+
+    // Show selected tab
+    document.getElementById(`${tabName}-tab`).style.display = 'block';
+    document.getElementById(`${tabName}-tab-btn`).classList.add('active');
+
+    // Update review if switching to review tab
+    if (tabName === 'review') {
+        updateReview();
+    }
+}
+
+// ============================================================================
+// APPLICATIONS
+// ============================================================================
+
+async function loadAvailableApps() {
+    const loading = document.getElementById('apps-loading');
+    const error = document.getElementById('apps-error');
+    const container = document.getElementById('apps-container');
+
+    loading.style.display = 'block';
+    error.style.display = 'none';
+
+    try {
+        const response = await fetch(`/api/jobs/${selectedJobId}/available-apps`);
+        const data = await response.json();
+
+        loading.style.display = 'none';
+
+        if (!data.success) {
+            error.textContent = data.error;
+            error.style.display = 'block';
+            return;
+        }
+
+        availableApps = data.apps;
+        renderApps();
+        container.style.display = 'block';
+
+    } catch (err) {
+        loading.style.display = 'none';
+        error.textContent = 'Error loading apps: ' + err.message;
+        error.style.display = 'block';
+    }
+}
+
+function renderApps(filterText = '') {
+    const grid = document.getElementById('apps-grid');
+    const filtered = filterText
+        ? availableApps.filter(app =>
+            app.name.toLowerCase().includes(filterText.toLowerCase()) ||
+            app.description.toLowerCase().includes(filterText.toLowerCase()) ||
+            app.tags.some(tag => tag.toLowerCase().includes(filterText.toLowerCase()))
+        )
+        : availableApps;
+
+    grid.innerHTML = filtered.map(app => {
+        const isSelected = selectedApps.has(app.name);
+        const riskColor = app.risk_tier === 0 ? '#4caf50' : app.risk_tier <= 2 ? '#ff9800' : '#f44336';
+
+        return `
+            <div class="app-card ${isSelected ? 'selected' : ''}" onclick="toggleApp('${app.name}')">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                    <div style="flex: 1;">
+                        <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 0.25rem;">
+                            ${isSelected ? '✓ ' : ''}${app.name}
+                        </div>
+                        <div style="font-size: 0.85rem; color: #666;">
+                            v${app.version}
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-end;">
+                        ${app.verified ? '<span style="background: #4caf50; color: white; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.7rem;">✓ VERIFIED</span>' : ''}
+                        <span style="background: ${riskColor}; color: white; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.7rem;">
+                            RISK ${app.risk_tier}
+                        </span>
+                    </div>
+                </div>
+                <div style="font-size: 0.9rem; color: #444; margin-bottom: 0.5rem;">
+                    ${app.description || 'No description'}
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">
+                    ${app.tags.map(tag => `<span style="background: #e0e0e0; color: #333; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.75rem;">${tag}</span>`).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    updateAppsCount();
+}
+
+function toggleApp(appName) {
+    if (selectedApps.has(appName)) {
+        selectedApps.delete(appName);
+    } else {
+        selectedApps.add(appName);
+    }
+    renderApps(document.getElementById('app-search').value);
+}
+
+function selectAllApps() {
+    availableApps.forEach(app => selectedApps.add(app.name));
+    renderApps(document.getElementById('app-search').value);
+}
+
+function deselectAllApps() {
+    selectedApps.clear();
+    renderApps(document.getElementById('app-search').value);
+}
+
+function filterApps() {
+    const searchText = document.getElementById('app-search').value;
+    renderApps(searchText);
+}
+
+function updateAppsCount() {
+    document.getElementById('apps-selected-count').innerHTML = `<strong>Selected:</strong> ${selectedApps.size} applications`;
+}
+
+// ============================================================================
+// MCP TOOLS
+// ============================================================================
+
+async function loadAvailableTools() {
+    const loading = document.getElementById('tools-loading');
+    const error = document.getElementById('tools-error');
+    const container = document.getElementById('tools-container');
+
+    loading.style.display = 'block';
+    error.style.display = 'none';
+
+    try {
+        const response = await fetch(`/api/jobs/${selectedJobId}/available-tools`);
+        const data = await response.json();
+
+        loading.style.display = 'none';
+
+        if (!data.success) {
+            error.textContent = data.error;
+            error.style.display = 'block';
+            return;
+        }
+
+        availableTools = data.tools;
+        renderTools();
+        container.style.display = 'block';
+
+    } catch (err) {
+        loading.style.display = 'none';
+        error.textContent = 'Error loading tools: ' + err.message;
+        error.style.display = 'block';
+    }
+}
+
+function renderTools(filterText = '') {
+    const grid = document.getElementById('tools-grid');
+    const filtered = filterText
+        ? availableTools.filter(tool =>
+            tool.name.toLowerCase().includes(filterText.toLowerCase()) ||
+            tool.description.toLowerCase().includes(filterText.toLowerCase())
+        )
+        : availableTools;
+
+    grid.innerHTML = filtered.map(tool => {
+        const isSelected = selectedTools.has(tool.name);
+        const categoryColor = '#2196F3';
+
+        return `
+            <div class="tool-card ${isSelected ? 'selected' : ''}" onclick="toggleTool('${tool.name}')">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                    <div style="flex: 1;">
+                        <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 0.25rem;">
+                            ${isSelected ? '✓ ' : ''}${tool.name}
+                        </div>
+                        <div style="font-size: 0.85rem; color: #666;">
+                            ${tool.version || 'latest'}
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-end;">
+                        <span style="background: ${categoryColor}; color: white; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.7rem;">
+                            ${tool.category || 'TOOL'}
+                        </span>
+                        ${tool.requires_config ? '<span style="background: #ff9800; color: white; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.7rem;">⚙️ CONFIG</span>' : ''}
+                    </div>
+                </div>
+                <div style="font-size: 0.9rem; color: #444; margin-bottom: 0.5rem;">
+                    ${tool.description || 'No description'}
+                </div>
+                ${tool.requires_config ? `
+                    <div style="font-size: 0.8rem; color: #ff9800; margin-top: 0.5rem;">
+                        ⚙️ Requires configuration: ${(tool.env_vars || []).join(', ')}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+
+    updateToolsCount();
+}
+
+function toggleTool(toolName) {
+    if (selectedTools.has(toolName)) {
+        selectedTools.delete(toolName);
+    } else {
+        selectedTools.add(toolName);
+    }
+    renderTools(document.getElementById('tool-search').value);
+}
+
+function selectAllTools() {
+    availableTools.forEach(tool => selectedTools.add(tool.name));
+    renderTools(document.getElementById('tool-search').value);
+}
+
+function deselectAllTools() {
+    selectedTools.clear();
+    renderTools(document.getElementById('tool-search').value);
+}
+
+function filterTools() {
+    const searchText = document.getElementById('tool-search').value;
+    renderTools(searchText);
+}
+
+function updateToolsCount() {
+    document.getElementById('tools-selected-count').innerHTML = `<strong>Selected:</strong> ${selectedTools.size} tools`;
+}
+
+// ============================================================================
+// REVIEW & DEPLOY
+// ============================================================================
+
+function updateReview() {
+    const hasSelection = selectedApps.size > 0 || selectedTools.size > 0;
+
+    document.getElementById('review-empty').style.display = hasSelection ? 'none' : 'block';
+    document.getElementById('review-content').style.display = hasSelection ? 'block' : 'none';
+
+    if (!hasSelection) return;
+
+    // Update apps section
+    if (selectedApps.size > 0) {
+        document.getElementById('review-apps-section').style.display = 'block';
+        document.getElementById('review-apps-count').textContent = selectedApps.size;
+        document.getElementById('review-apps-list').innerHTML = Array.from(selectedApps).map(name =>
+            `<span class="tag">${name} <button class="remove-btn" onclick="removeApp('${name}')">×</button></span>`
+        ).join('');
+    } else {
+        document.getElementById('review-apps-section').style.display = 'none';
+    }
+
+    // Update tools section
+    if (selectedTools.size > 0) {
+        document.getElementById('review-tools-section').style.display = 'block';
+        document.getElementById('review-tools-count').textContent = selectedTools.size;
+        document.getElementById('review-tools-list').innerHTML = Array.from(selectedTools).map(name =>
+            `<span class="tag" style="background: #2196F3;">${name} <button class="remove-btn" onclick="removeTool('${name}')">×</button></span>`
+        ).join('');
+    } else {
+        document.getElementById('review-tools-section').style.display = 'none';
+    }
+
+    // Update summary
+    document.getElementById('review-target-url').textContent = kamiwazaUrl;
+    document.getElementById('review-total-apps').textContent = selectedApps.size;
+    document.getElementById('review-total-tools').textContent = selectedTools.size;
+    document.getElementById('review-total-items').textContent = selectedApps.size + selectedTools.size;
+}
+
+function removeApp(appName) {
+    selectedApps.delete(appName);
+    updateReview();
+    renderApps(document.getElementById('app-search').value);
+}
+
+function removeTool(toolName) {
+    selectedTools.delete(toolName);
+    updateReview();
+    renderTools(document.getElementById('tool-search').value);
+}
+
+function clearAll() {
+    if (confirm('Are you sure you want to clear all selections?')) {
+        selectedApps.clear();
+        selectedTools.clear();
+        updateReview();
+        renderApps(document.getElementById('app-search').value);
+        renderTools(document.getElementById('tool-search').value);
+    }
+}
+
+async function deployAll() {
+    if (!selectedJobId) {
+        alert('Please select a Kamiwaza instance first');
+        return;
+    }
+
+    if (selectedApps.size === 0 && selectedTools.size === 0) {
+        alert('Please select at least one app or tool to deploy');
+        return;
+    }
+
+    const confirmed = confirm(
+        `Deploy to Kamiwaza?\n\n` +
+        `Target: ${kamiwazaUrl}\n` +
+        `Applications: ${selectedApps.size}\n` +
+        `MCP Tools: ${selectedTools.size}\n\n` +
+        `This will install the selected items on the Kamiwaza instance.`
+    );
+
+    if (!confirmed) return;
+
+    const statusDiv = document.getElementById('deploy-status');
+    statusDiv.style.display = 'block';
+    statusDiv.innerHTML = '<div class="alert alert-info">🚀 Deploying...</div>';
+
+    try {
+        // Deploy apps first
+        if (selectedApps.size > 0) {
+            statusDiv.innerHTML += '<p>📦 Deploying applications...</p>';
+            const appsResponse = await fetch(`/api/jobs/${selectedJobId}/deploy-apps`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    csrf_token: csrfToken,
+                    app_names: Array.from(selectedApps)
+                })
+            });
+            const appsData = await appsResponse.json();
+
+            if (appsData.success) {
+                statusDiv.innerHTML += `<div class="alert alert-success">✓ Apps deployed: ${appsData.deployed_count} success, ${appsData.failed_count} failed</div>`;
+            } else {
+                statusDiv.innerHTML += `<div class="alert alert-error">✗ Apps deployment failed: ${appsData.error}</div>`;
+            }
+        }
+
+        // Deploy tools
+        if (selectedTools.size > 0) {
+            statusDiv.innerHTML += '<p>🔧 Deploying MCP tools...</p>';
+            const toolsResponse = await fetch(`/api/jobs/${selectedJobId}/deploy-tools`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    csrf_token: csrfToken,
+                    tool_names: Array.from(selectedTools)
+                })
+            });
+            const toolsData = await toolsResponse.json();
+
+            if (toolsData.success) {
+                statusDiv.innerHTML += `<div class="alert alert-success">✓ Tools deployed: ${toolsData.deployed_count} success, ${toolsData.failed_count} failed</div>`;
+            } else {
+                statusDiv.innerHTML += `<div class="alert alert-error">✗ Tools deployment failed: ${toolsData.error}</div>`;
+            }
+        }
+
+        statusDiv.innerHTML += '<div class="alert alert-success" style="margin-top: 1rem;"><strong>✓ Deployment complete!</strong> Check the job logs for details.</div>';
+
+        // Clear selections after successful deployment
+        setTimeout(() => {
+            clearAll();
+        }, 2000);
+
+    } catch (err) {
+        statusDiv.innerHTML = `<div class="alert alert-error">✗ Deployment error: ${err.message}</div>`;
+    }
+}
+
+// Auto-select first instance if available
+document.addEventListener('DOMContentLoaded', function() {
+    const select = document.getElementById('target_instance');
+    if (select && select.options.length > 1) {
+        select.selectedIndex = 1;
+        updateTargetInstance();
+    }
+});
+</script>
+{% endblock %}

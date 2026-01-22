@@ -20,11 +20,25 @@ class Settings(BaseSettings):
     kamiwaza_password: str = "kamiwaza"
     kamiwaza_db_path: str = "/opt/kamiwaza/db-lite/kamiwaza.db"
 
-    # Kamiwaza Package
+    # Kamiwaza Package (deprecated - use kamiwaza_source_url instead)
     kamiwaza_package_url: str = "https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb"
+
+    # Kamiwaza Source (for source-based installation)
+    kamiwaza_source_url: str = "https://kamiwaza-provisioning-source.s3.us-west-2.amazonaws.com/kamiwaza-release-0.9.2.zip"
 
     # App Garden & Toolshed
     app_garden_url: str = "https://dev-info.kamiwaza.ai/garden/v2/apps.json"
+    app_garden_api_url: str = ""  # API endpoint for publishing apps (e.g., https://app-garden.kamiwaza.ai/api)
+    app_garden_api_key: str = ""  # API key for App Garden (if required)
+
+    # Toolshed Configuration
+    toolshed_stage: str = "DEV"  # LOCAL, DEV, STAGE, PROD
+    toolshed_url_map: dict = {
+        "LOCAL": "http://localhost:58888",
+        "DEV": "https://dev-info.kamiwaza.ai",
+        "STAGE": "https://stage-info.kamiwaza.ai",
+        "PROD": "https://info.kamiwaza.ai",
+    }
 
     # Script Paths
     kamiwaza_provision_script: str = "/Users/steffenmerten/Code/kamiwaza/scripts/provision_users.py"

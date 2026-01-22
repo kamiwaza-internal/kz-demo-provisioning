@@ -1,0 +1,133 @@
+# ================================================
+# KEYCLOAK FIX - Copy and paste this into the EC2 terminal
+# ================================================
+# 
+# To connect to the instance:
+#   1. Go to: https://console.aws.amazon.com/systems-manager/session-manager
+#   2. Click 'Start session'
+#   3. Select instance: i-0a7113df3cea44390
+#   4. Click 'Start session'
+#   5. In the terminal, run: sudo su - ubuntu
+#   6. Then paste the commands below
+#
+# ================================================
+
+# Step 1: Get the public IP
+export PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+echo "Public IP: $PUBLIC_IP"
+
+# Step 2: Find docker-compose file
+COMPOSE_FILE=$(find /opt/kamiwaza -name "docker-compose.yml" 2>/dev/null | head -1)
+echo "Docker compose: $COMPOSE_FILE"
+
+# Step 3: Backup the file
+sudo cp "$COMPOSE_FILE" "${COMPOSE_FILE}.backup"
+
+# Step 4: Check current Keycloak config
+echo "Current Keycloak env vars:"
+grep -A 30 "keycloak:" "$COMPOSE_FILE" | grep -E "KC_|environment" | head -15
+
+# Step 5: Update Keycloak environment variables
+# This adds the required hostname settings
+sudo python3 << 'PYEOF'
+import yaml
+import subprocess
+import os
+
+# Get public IP
+result = subprocess.run(['curl', '-s', 'http://169.254.169.254/latest/meta-data/public-ipv4'], 
+                       capture_output=True, text=True)
+public_ip = result.stdout.strip()
+print(f"Configuring for IP: {public_ip}")
+
+# Find compose file
+compose_file = None
+for path in ['/opt/kamiwaza/docker-compose.yml', '/opt/kamiwaza/kamiwaza/docker-compose.yml']:
+    if os.path.exists(path):
+        compose_file = path
+        break
+
+if not compose_file:
+    print("ERROR: Could not find docker-compose.yml")
+    exit(1)
+
+print(f"Updating: {compose_file}")
+
+# Read
+with open(compose_file, 'r') as f:
+    compose = yaml.safe_load(f)
+
+# Find keycloak service
+keycloak_service = None
+for name in compose.get('services', {}):
+    if 'keycloak' in name.lower():
+        keycloak_service = name
+        break
+
+if not keycloak_service:
+    print("ERROR: No keycloak service found")
+    exit(1)
+
+print(f"Found service: {keycloak_service}")
+
+# Update environment
+svc = compose['services'][keycloak_service]
+if 'environment' not in svc:
+    svc['environment'] = {}
+
+env = svc['environment']
+if isinstance(env, list):
+    env_dict = {}
+    for item in env:
+        if '=' in str(item):
+            k, v = str(item).split('=', 1)
+            env_dict[k] = v
+    env = env_dict
+    svc['environment'] = env
+
+# Set hostname config
+env['KC_HOSTNAME'] = public_ip
+env['KC_HOSTNAME_URL'] = f'https://{public_ip}'
+env['KC_HOSTNAME_STRICT'] = 'false'
+env['KC_HOSTNAME_STRICT_HTTPS'] = 'false'
+env['KC_PROXY'] = 'edge'
+env['KC_HTTP_ENABLED'] = 'true'
+
+print("Set environment variables:")
+for k in ['KC_HOSTNAME', 'KC_HOSTNAME_URL', 'KC_HOSTNAME_STRICT', 'KC_PROXY']:
+    print(f"  {k}={env.get(k)}")
+
+# Write
+with open(compose_file, 'w') as f:
+    yaml.dump(compose, f, default_flow_style=False, sort_keys=False)
+
+print("✓ Configuration updated")
+PYEOF
+
+# Step 6: Restart Keycloak
+cd $(dirname "$COMPOSE_FILE")
+echo "Restarting Keycloak..."
+sudo docker-compose stop keycloak
+sudo docker-compose rm -f keycloak
+sudo docker-compose up -d keycloak
+
+# Step 7: Wait and verify
+echo "Waiting for Keycloak to restart (90 seconds)..."
+sleep 90
+
+# Check new issuer
+echo "New Keycloak issuer:"
+curl -sk https://localhost/realms/kamiwaza/.well-known/openid-configuration | grep -o '"issuer":"[^"]*"'
+
+# Step 8: Restart the backend too (it may cache the issuer URL)
+echo "Restarting backend to pick up new Keycloak config..."
+sudo docker-compose restart backend || sudo docker restart $(docker ps -q --filter name=backend) || true
+
+echo ""
+echo "=========================================="
+echo "Done! Now:"
+echo "1. Clear your browser cache for https://$PUBLIC_IP"
+echo "2. Try logging in at: https://$PUBLIC_IP/login"
+echo "   Username: admin"
+echo "   Password: kamiwaza"
+echo "=========================================="

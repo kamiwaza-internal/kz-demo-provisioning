@@ -264,7 +264,8 @@ async def new_job_form(
         "allowed_regions": settings.allowed_regions_list,
         "allowed_instance_types": settings.allowed_instance_types_list,
         "allow_access_key_auth": settings.allow_access_key_auth,
-        "available_amis": available_amis
+        "available_amis": available_amis,
+        "toolshed_stage": settings.toolshed_stage
     })
 
 
@@ -288,6 +289,9 @@ async def create_job(
     use_cached_ami: Optional[bool] = Form(False),
     tags: Optional[str] = Form(None),
     dockerhub_images: Optional[str] = Form(None),
+    selected_apps: Optional[str] = Form("[]"),
+    selected_tools: Optional[str] = Form("[]"),
+    custom_mcp_github_urls: Optional[str] = Form("[]"),
     requester_email: str = Form(...),
     csv_file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
@@ -329,6 +333,30 @@ async def create_job(
         sg_ids = []
         if security_group_ids:
             sg_ids = [sg.strip() for sg in security_group_ids.split(",") if sg.strip()]
+
+        # Parse selected apps
+        selected_apps_list = []
+        if selected_apps:
+            try:
+                selected_apps_list = json.loads(selected_apps)
+            except Exception as e:
+                logger.warning(f"Failed to parse selected_apps: {str(e)}")
+
+        # Parse selected tools
+        selected_tools_list = []
+        if selected_tools:
+            try:
+                selected_tools_list = json.loads(selected_tools)
+            except Exception as e:
+                logger.warning(f"Failed to parse selected_tools: {str(e)}")
+
+        # Parse custom MCP GitHub URLs
+        custom_mcp_urls_list = []
+        if custom_mcp_github_urls:
+            try:
+                custom_mcp_urls_list = json.loads(custom_mcp_github_urls)
+            except Exception as e:
+                logger.warning(f"Failed to parse custom_mcp_github_urls: {str(e)}")
 
         # AWS auth settings from config (configured in Settings page or .env)
         aws_auth_method = settings.aws_auth_method
@@ -384,6 +412,9 @@ async def create_job(
             use_cached_ami=use_cached_ami if deployment_type == "kamiwaza" else False,
             tags=job_data.tags,
             dockerhub_images=[c.model_dump() for c in job_data.dockerhub_images] if job_data.dockerhub_images else [],
+            selected_apps=selected_apps_list,
+            selected_tools=selected_tools_list,
+            custom_mcp_github_urls=custom_mcp_urls_list,
             requester_email=job_data.requester_email
         )
 
@@ -696,6 +727,49 @@ async def deployment_manager_home(
     })
 
 
+# ============================================================================
+# TOOLS + APPS MANAGEMENT ROUTES
+# ============================================================================
+
+@app.get("/tools-and-apps", response_class=HTMLResponse)
+async def tools_and_apps_manager(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Display Tools + Apps management interface"""
+    csrf_token = csrf_protection.generate_token()
+
+    # Get available Kamiwaza instances (successful deployments that are ready)
+    available_instances = db.query(Job).filter(
+        Job.deployment_type == "kamiwaza",
+        Job.status == "success",
+        Job.kamiwaza_ready == True,
+        Job.public_ip != None
+    ).order_by(Job.completed_at.desc()).limit(10).all()
+
+    # Format instances for dropdown
+    instances = []
+    for job in available_instances:
+        instances.append({
+            "id": job.id,
+            "name": job.job_name,
+            "url": f"https://{job.public_ip}",
+            "public_ip": job.public_ip,
+            "completed_at": job.completed_at.strftime('%Y-%m-%d %H:%M') if job.completed_at else "N/A"
+        })
+
+    # Use settings URL as fallback
+    default_url = settings.kamiwaza_url
+
+    return templates.TemplateResponse("tools_and_apps.html", {
+        "request": request,
+        "csrf_token": csrf_token,
+        "kamiwaza_url": default_url,
+        "available_instances": instances,
+        "toolshed_stage": settings.toolshed_stage
+    })
+
+
 @app.post("/deployment-manager/provision")
 async def create_provisioning_job(
     request: Request,
@@ -909,6 +983,7 @@ async def settings_page(
         "KAMIWAZA_USERNAME": os.environ.get("KAMIWAZA_USERNAME", settings.kamiwaza_username),
         "KAMIWAZA_PASSWORD": os.environ.get("KAMIWAZA_PASSWORD", settings.kamiwaza_password),
         "KAMIWAZA_DB_PATH": os.environ.get("KAMIWAZA_DB_PATH", settings.kamiwaza_db_path),
+        "KAMIWAZA_SOURCE_URL": os.environ.get("KAMIWAZA_SOURCE_URL", settings.kamiwaza_source_url),
         "KAMIWAZA_PACKAGE_URL": os.environ.get("KAMIWAZA_PACKAGE_URL", settings.kamiwaza_package_url),
         "APP_GARDEN_URL": os.environ.get("APP_GARDEN_URL", settings.app_garden_url),
         "KAMIWAZA_PROVISION_SCRIPT": os.environ.get("KAMIWAZA_PROVISION_SCRIPT", settings.kamiwaza_provision_script),
@@ -950,7 +1025,8 @@ async def save_settings(
     kamiwaza_username: str = Form(...),
     kamiwaza_password: str = Form(...),
     kamiwaza_db_path: str = Form(""),
-    kamiwaza_package_url: str = Form(...),
+    kamiwaza_source_url: str = Form(...),
+    kamiwaza_package_url: str = Form(""),
     app_garden_url: str = Form("https://dev-info.kamiwaza.ai/garden/v2/apps.json"),
     provision_script: str = Form(...),
     kaizen_source: str = Form(...),
@@ -986,6 +1062,7 @@ KAMIWAZA_PASSWORD={kamiwaza_password}
 KAMIWAZA_DB_PATH={kamiwaza_db_path}
 
 # Kamiwaza Package
+KAMIWAZA_SOURCE_URL={kamiwaza_source_url}
 KAMIWAZA_PACKAGE_URL={kamiwaza_package_url}
 
 # App Garden & Toolshed
@@ -1031,6 +1108,7 @@ REDIS_URL=redis://localhost:6379/0
         os.environ["KAMIWAZA_USERNAME"] = kamiwaza_username
         os.environ["KAMIWAZA_PASSWORD"] = kamiwaza_password
         os.environ["KAMIWAZA_DB_PATH"] = kamiwaza_db_path
+        os.environ["KAMIWAZA_SOURCE_URL"] = kamiwaza_source_url
         os.environ["KAMIWAZA_PACKAGE_URL"] = kamiwaza_package_url
         os.environ["APP_GARDEN_URL"] = app_garden_url
         os.environ["KAMIWAZA_PROVISION_SCRIPT"] = provision_script
@@ -1057,6 +1135,7 @@ REDIS_URL=redis://localhost:6379/0
             "KAMIWAZA_USERNAME": kamiwaza_username,
             "KAMIWAZA_PASSWORD": kamiwaza_password,
             "KAMIWAZA_DB_PATH": kamiwaza_db_path,
+            "KAMIWAZA_SOURCE_URL": kamiwaza_source_url,
             "KAMIWAZA_PACKAGE_URL": kamiwaza_package_url,
             "APP_GARDEN_URL": app_garden_url,
             "KAMIWAZA_PROVISION_SCRIPT": provision_script,
@@ -1116,6 +1195,50 @@ async def get_cached_ami_api(region: str = "us-east-1"):
             "error": str(e),
             "amis": [],
             "count": 0
+        }, status_code=500)
+
+
+@app.get("/api/available-apps")
+async def get_available_apps_for_creation():
+    """Get available apps from app garden for job creation"""
+    try:
+        from app.kamiwaza_app_hydrator import KamiwazaAppHydrator
+
+        # Fetch apps from app garden
+        hydrator = KamiwazaAppHydrator()
+        success, apps_data, error_msg = hydrator.fetch_app_garden_data()
+
+        if not success:
+            return JSONResponse({
+                "success": False,
+                "error": error_msg
+            }, status_code=500)
+
+        # Return apps with relevant info
+        apps = []
+        for app in apps_data:
+            apps.append({
+                "name": app.get("name", "Unknown"),
+                "version": app.get("version", "Unknown"),
+                "description": app.get("description", ""),
+                "category": app.get("category", "app"),
+                "tags": app.get("tags", []),
+                "preview_image": app.get("preview_image", ""),
+                "verified": app.get("verified", False),
+                "risk_tier": app.get("risk_tier", 0)
+            })
+
+        return JSONResponse({
+            "success": True,
+            "apps": apps,
+            "count": len(apps)
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching available apps: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
         }, status_code=500)
 
 
@@ -1286,6 +1409,584 @@ async def deploy_apps_to_job(
 
     except Exception as e:
         logger.error(f"Error deploying apps: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+
+# ============================================================================
+# TOOLSHED TOOLS ENDPOINTS
+# ============================================================================
+
+@app.get("/api/available-tools")
+async def get_available_tools_for_creation():
+    """Get available tools from toolshed for job creation"""
+    try:
+        from app.kamiwaza_tools_provisioner import KamiwazaToolsProvisioner
+
+        # Create provisioner with default Kamiwaza URL
+        provisioner = KamiwazaToolsProvisioner(
+            kamiwaza_url=settings.kamiwaza_url,
+            username=settings.kamiwaza_username,
+            password=settings.kamiwaza_password,
+            toolshed_stage=settings.toolshed_stage
+        )
+
+        # Authenticate
+        success, token, error_msg = provisioner.authenticate()
+        if not success:
+            return JSONResponse({
+                "success": False,
+                "error": f"Authentication failed: {error_msg}"
+            }, status_code=500)
+
+        # Sync toolshed first
+        sync_success, sync_msg = provisioner.sync_toolshed(token)
+        if not sync_success:
+            logger.warning(f"Toolshed sync failed: {sync_msg}, using cached templates")
+
+        # Get available tool templates
+        success, tools_data, error_msg = provisioner.get_available_tool_templates(token)
+
+        if not success:
+            return JSONResponse({
+                "success": False,
+                "error": error_msg
+            }, status_code=500)
+
+        # Return tools with relevant info
+        tools = []
+        for tool in tools_data:
+            tools.append({
+                "name": tool.get("name", "Unknown"),
+                "description": tool.get("description", ""),
+                "version": tool.get("version", "Unknown"),
+                "category": tool.get("category", "tool"),
+                "requires_config": tool.get("requires_config", False),
+                "env_vars": tool.get("env_vars", [])
+            })
+
+        return JSONResponse({
+            "success": True,
+            "tools": tools,
+            "count": len(tools)
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching available tools: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+
+@app.get("/api/jobs/{job_id}/available-tools")
+async def get_available_tools(job_id: int, db: Session = Depends(get_db)):
+    """Get available tools from toolshed for a job"""
+    try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            return JSONResponse({
+                "success": False,
+                "error": "Job not found"
+            }, status_code=404)
+
+        # Check if job is a Kamiwaza deployment
+        if job.deployment_type != "kamiwaza":
+            return JSONResponse({
+                "success": False,
+                "error": "This job is not a Kamiwaza deployment"
+            }, status_code=400)
+
+        from app.kamiwaza_tools_provisioner import KamiwazaToolsProvisioner
+
+        # Check if Kamiwaza instance is ready
+        if not job.kamiwaza_ready:
+            return JSONResponse({
+                "success": False,
+                "error": "Kamiwaza instance is not ready yet. Please wait for deployment to complete."
+            }, status_code=400)
+
+        if not job.public_ip:
+            return JSONResponse({
+                "success": False,
+                "error": "Kamiwaza instance has no public IP address"
+            }, status_code=400)
+
+        # Create provisioner pointing to the job's Kamiwaza instance
+        kamiwaza_url = f"https://{job.public_ip}"
+        provisioner = KamiwazaToolsProvisioner(
+            kamiwaza_url=kamiwaza_url,
+            username=settings.kamiwaza_username,
+            password=settings.kamiwaza_password,
+            toolshed_stage=settings.toolshed_stage
+        )
+
+        # Authenticate
+        success, token, error_msg = provisioner.authenticate()
+        if not success:
+            # Return friendly error with suggestions
+            friendly_msg = f"Cannot connect to Kamiwaza instance: {error_msg}\n\n"
+
+            if "502" in error_msg or "Bad Gateway" in error_msg:
+                friendly_msg += "This means the Kamiwaza backend service is not responding. Possible causes:\n"
+                friendly_msg += "• Backend container is not running\n"
+                friendly_msg += "• Keycloak authentication service is down\n"
+                friendly_msg += "• Instance is still starting up (can take 20-30 minutes)\n\n"
+                friendly_msg += "Check the job deployment logs or SSH into the instance to diagnose."
+            elif "Connection" in error_msg or "Timeout" in error_msg:
+                friendly_msg += "The instance is not reachable. Check if it's running and accessible."
+
+            return JSONResponse({
+                "success": False,
+                "error": friendly_msg.strip()
+            }, status_code=500)
+
+        # Sync toolshed first (important!)
+        sync_success, sync_msg = provisioner.sync_toolshed(token)
+        if not sync_success:
+            logger.warning(f"Toolshed sync failed for job {job_id}: {sync_msg}, will try to use cached templates")
+
+        # Get available tool templates
+        success, tools_data, error_msg = provisioner.get_available_tool_templates(token)
+
+        if not success:
+            return JSONResponse({
+                "success": False,
+                "error": error_msg
+            }, status_code=500)
+
+        # Return tools with relevant info
+        tools = []
+        for tool in tools_data:
+            tools.append({
+                "name": tool.get("name", "Unknown"),
+                "description": tool.get("description", ""),
+                "version": tool.get("version", "Unknown"),
+                "category": tool.get("category", "tool"),
+                "requires_config": tool.get("requires_config", False),
+                "env_vars": tool.get("env_vars", [])
+            })
+
+        return JSONResponse({
+            "success": True,
+            "tools": tools,
+            "count": len(tools)
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching available tools: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+
+@app.post("/api/jobs/{job_id}/deploy-tools")
+async def deploy_tools_to_job(
+    job_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Deploy selected tools to a Kamiwaza instance"""
+    try:
+        body = await request.json()
+        csrf_token = body.get("csrf_token")
+        tool_names = body.get("tool_names", [])
+
+        # Verify CSRF token
+        if not csrf_protection.verify_token(csrf_token):
+            return JSONResponse({
+                "success": False,
+                "error": "Invalid CSRF token"
+            }, status_code=403)
+
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            return JSONResponse({
+                "success": False,
+                "error": "Job not found"
+            }, status_code=404)
+
+        # Check if job is ready
+        if not job.kamiwaza_ready:
+            return JSONResponse({
+                "success": False,
+                "error": "Kamiwaza instance is not ready yet"
+            }, status_code=400)
+
+        if not tool_names:
+            return JSONResponse({
+                "success": False,
+                "error": "No tools selected"
+            }, status_code=400)
+
+        from app.kamiwaza_tools_provisioner import KamiwazaToolsProvisioner
+
+        # Create provisioner pointing to the job's Kamiwaza instance
+        kamiwaza_url = f"https://{job.public_ip}" if job.public_ip else settings.kamiwaza_url
+        provisioner = KamiwazaToolsProvisioner(
+            kamiwaza_url=kamiwaza_url,
+            username=settings.kamiwaza_username,
+            password=settings.kamiwaza_password,
+            toolshed_stage=settings.toolshed_stage
+        )
+
+        # Authenticate
+        auth_success, token, auth_error = provisioner.authenticate()
+        if not auth_success:
+            return JSONResponse({
+                "success": False,
+                "error": f"Authentication failed: {auth_error}"
+            }, status_code=500)
+
+        # Deploy each tool
+        deployed_tools = []
+        failed_tools = []
+
+        for tool_name in tool_names:
+            deploy_success, deploy_msg = provisioner.deploy_tool(token, tool_name)
+
+            if deploy_success:
+                deployed_tools.append(tool_name)
+                # Log deployment
+                log = JobLog(
+                    job_id=job.id,
+                    level="info",
+                    message=f"✓ Deployed tool: {tool_name}",
+                    source="tool-deployment"
+                )
+                db.add(log)
+            else:
+                failed_tools.append({"name": tool_name, "error": deploy_msg})
+                # Log failure
+                log = JobLog(
+                    job_id=job.id,
+                    level="error",
+                    message=f"✗ Failed to deploy tool {tool_name}: {deploy_msg}",
+                    source="tool-deployment"
+                )
+                db.add(log)
+
+        # Update job's tool deployment status
+        if not job.tool_deployment_status:
+            job.tool_deployment_status = {}
+
+        for tool_name in deployed_tools:
+            job.tool_deployment_status[tool_name] = "success"
+
+        for failed_tool in failed_tools:
+            job.tool_deployment_status[failed_tool["name"]] = "failed"
+
+        db.commit()
+
+        return JSONResponse({
+            "success": True,
+            "deployed": deployed_tools,
+            "failed": failed_tools,
+            "deployed_count": len(deployed_tools),
+            "failed_count": len(failed_tools)
+        })
+
+    except Exception as e:
+        logger.error(f"Error deploying tools: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+
+# ============================================================================
+# MCP GITHUB IMPORT ENDPOINTS
+# ============================================================================
+
+@app.post("/api/mcp/validate-github")
+async def validate_mcp_github_url(request: Request):
+    """
+    Validate an MCP tool from a GitHub URL.
+    Performs basic validation of repository structure.
+    """
+    try:
+        body = await request.json()
+        csrf_token = body.get("csrf_token")
+        github_url = body.get("github_url")
+        github_token = body.get("github_token")  # Optional
+
+        # Verify CSRF token
+        if not csrf_protection.verify_token(csrf_token):
+            return JSONResponse({
+                "success": False,
+                "error": "Invalid CSRF token"
+            }, status_code=403)
+
+        if not github_url:
+            return JSONResponse({
+                "success": False,
+                "error": "github_url is required"
+            }, status_code=400)
+
+        from app.mcp_github_importer import MCPGitHubImporter
+
+        # Create importer
+        importer = MCPGitHubImporter(github_token=github_token)
+
+        # Validate repository
+        success, tool_config, log_lines = importer.validate_mcp_repo(github_url)
+
+        if success:
+            return JSONResponse({
+                "success": True,
+                "tool_config": tool_config,
+                "validation_logs": log_lines
+            })
+        else:
+            return JSONResponse({
+                "success": False,
+                "error": "Validation failed",
+                "validation_logs": log_lines
+            }, status_code=400)
+
+    except Exception as e:
+        logger.error(f"Error validating MCP GitHub URL: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+
+@app.post("/api/mcp/import-to-kamiwaza")
+async def import_mcp_to_kamiwaza(request: Request, db: Session = Depends(get_db)):
+    """
+    Import an MCP tool from GitHub to a Kamiwaza instance.
+    Validates the tool first, then registers it to Kamiwaza's toolshed.
+    """
+    try:
+        body = await request.json()
+        csrf_token = body.get("csrf_token")
+        github_url = body.get("github_url")
+        github_token = body.get("github_token")  # Optional
+        job_id = body.get("job_id")  # Optional: if importing for a specific job
+
+        # Verify CSRF token
+        if not csrf_protection.verify_token(csrf_token):
+            return JSONResponse({
+                "success": False,
+                "error": "Invalid CSRF token"
+            }, status_code=403)
+
+        if not github_url:
+            return JSONResponse({
+                "success": False,
+                "error": "github_url is required"
+            }, status_code=400)
+
+        from app.mcp_github_importer import MCPGitHubImporter
+
+        # Create importer
+        importer = MCPGitHubImporter(github_token=github_token)
+
+        # Step 1: Validate repository
+        success, tool_config, validation_logs = importer.validate_mcp_repo(github_url)
+        if not success:
+            return JSONResponse({
+                "success": False,
+                "error": "Tool validation failed",
+                "validation_logs": validation_logs
+            }, status_code=400)
+
+        # Step 2: Determine Kamiwaza URL
+        kamiwaza_url = settings.kamiwaza_url
+        if job_id:
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job and job.public_ip:
+                kamiwaza_url = f"https://{job.public_ip}"
+
+        # Step 3: Authenticate with Kamiwaza
+        from app.kamiwaza_tools_provisioner import KamiwazaToolsProvisioner
+        provisioner = KamiwazaToolsProvisioner(
+            kamiwaza_url=kamiwaza_url,
+            username=settings.kamiwaza_username,
+            password=settings.kamiwaza_password
+        )
+
+        auth_success, token, auth_error = provisioner.authenticate()
+        if not auth_success:
+            return JSONResponse({
+                "success": False,
+                "error": f"Authentication failed: {auth_error}"
+            }, status_code=500)
+
+        # Step 4: Import to Kamiwaza
+        import_success, import_message = importer.import_to_kamiwaza(
+            kamiwaza_url,
+            token,
+            tool_config,
+            github_url
+        )
+
+        if import_success:
+            # Log import if for a specific job
+            if job_id:
+                job = db.query(Job).filter(Job.id == job_id).first()
+                if job:
+                    log = JobLog(
+                        job_id=job.id,
+                        level="info",
+                        message=f"✓ Imported MCP tool from GitHub: {tool_config['name']}",
+                        source="mcp-import"
+                    )
+                    db.add(log)
+                    db.commit()
+
+            return JSONResponse({
+                "success": True,
+                "message": import_message,
+                "tool_name": tool_config['name'],
+                "validation_logs": validation_logs
+            })
+        else:
+            return JSONResponse({
+                "success": False,
+                "error": import_message,
+                "validation_logs": validation_logs
+            }, status_code=500)
+
+    except Exception as e:
+        logger.error(f"Error importing MCP to Kamiwaza: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+
+# ============================================================================
+# MCP GITHUB IMPORT ENDPOINTS
+# ============================================================================
+
+@app.post("/api/mcp/validate-github")
+async def validate_mcp_github(request: Request):
+    """Validate an MCP tool from GitHub URL"""
+    try:
+        body = await request.json()
+        csrf_token = body.get("csrf_token")
+        github_url = body.get("github_url")
+
+        # Verify CSRF token
+        if not csrf_protection.verify_token(csrf_token):
+            return JSONResponse({
+                "success": False,
+                "error": "Invalid CSRF token"
+            }, status_code=403)
+
+        if not github_url:
+            return JSONResponse({
+                "success": False,
+                "error": "github_url is required"
+            }, status_code=400)
+
+        from app.mcp_github_importer import MCPGitHubImporter
+
+        # Create importer and validate
+        importer = MCPGitHubImporter()
+        success, tool_config, validation_logs = importer.validate_mcp_repo(github_url)
+
+        if success:
+            return JSONResponse({
+                "success": True,
+                "tool_config": tool_config,
+                "validation_logs": validation_logs
+            })
+        else:
+            return JSONResponse({
+                "success": False,
+                "error": "MCP tool validation failed. Check validation logs for details.",
+                "validation_logs": validation_logs
+            }, status_code=400)
+
+    except Exception as e:
+        logger.error(f"Error validating MCP GitHub URL: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+
+@app.post("/api/app-garden/publish")
+async def publish_app_to_garden(request: Request):
+    """
+    Publish a new app or update an existing app in the App Garden.
+    This allows deployment manager to push apps to the App Garden registry.
+    """
+    try:
+        import httpx
+
+        body = await request.json()
+        csrf_token = body.get("csrf_token")
+
+        # Verify CSRF token
+        if not csrf_protection.verify_token(csrf_token):
+            return JSONResponse({
+                "success": False,
+                "error": "Invalid CSRF token"
+            }, status_code=403)
+
+        # Extract app data
+        app_data = body.get("app_data")
+        if not app_data:
+            return JSONResponse({
+                "success": False,
+                "error": "app_data is required"
+            }, status_code=400)
+
+        # Validate required fields
+        required_fields = ["name", "version", "docker_images", "compose_yml"]
+        missing_fields = [field for field in required_fields if field not in app_data]
+        if missing_fields:
+            return JSONResponse({
+                "success": False,
+                "error": f"Missing required fields: {', '.join(missing_fields)}"
+            }, status_code=400)
+
+        # Get App Garden API URL from settings
+        from app.config import settings
+        app_garden_api_url = settings.app_garden_api_url
+        if not app_garden_api_url:
+            return JSONResponse({
+                "success": False,
+                "error": "APP_GARDEN_API_URL not configured. Cannot publish to App Garden. Please configure in Settings."
+            }, status_code=500)
+
+        # Get API key for App Garden (if required)
+        app_garden_api_key = settings.app_garden_api_key
+
+        # Publish to App Garden
+        headers = {"Content-Type": "application/json"}
+        if app_garden_api_key:
+            headers["Authorization"] = f"Bearer {app_garden_api_key}"
+
+        with httpx.Client(timeout=30.0) as client:
+            response = client.post(
+                f"{app_garden_api_url}/apps",
+                json=app_data,
+                headers=headers
+            )
+
+            if response.status_code in [200, 201]:
+                return JSONResponse({
+                    "success": True,
+                    "message": f"Successfully published app '{app_data['name']}' to App Garden",
+                    "data": response.json()
+                })
+            else:
+                return JSONResponse({
+                    "success": False,
+                    "error": f"App Garden API error: HTTP {response.status_code}",
+                    "details": response.text
+                }, status_code=response.status_code)
+
+    except Exception as e:
+        logger.error(f"Error publishing to App Garden: {str(e)}")
         return JSONResponse({
             "success": False,
             "error": str(e)
