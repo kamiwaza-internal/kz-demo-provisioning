@@ -23,6 +23,43 @@ KAMIWAZA_PACKAGE_URL="${KAMIWAZA_PACKAGE_URL:-https://pub-3feaeada14ef4a368ea387
 KAMIWAZA_USER="${KAMIWAZA_USER:-ec2-user}"
 KAMIWAZA_DEPLOYMENT_MODE="${KAMIWAZA_DEPLOYMENT_MODE:-full}"
 
+# EC2 Instance Metadata Service (IMDS) helper
+# Supports both IMDSv1 and IMDSv2 (token-based)
+# Usage: get_metadata <metadata-path>
+# Example: get_metadata public-ipv4
+IMDS_TOKEN=""
+get_imds_token() {
+    # Get IMDSv2 token (valid for 6 hours)
+    if [ -z "$IMDS_TOKEN" ]; then
+        IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
+            -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" \
+            -m 5 2>/dev/null || echo "")
+    fi
+    echo "$IMDS_TOKEN"
+}
+
+get_metadata() {
+    local path="$1"
+    local token
+    local result=""
+    
+    # Try IMDSv2 first (token-based)
+    token=$(get_imds_token)
+    if [ -n "$token" ]; then
+        result=$(curl -s -H "X-aws-ec2-metadata-token: $token" \
+            "http://169.254.169.254/latest/meta-data/${path}" \
+            -m 5 2>/dev/null || echo "")
+    fi
+    
+    # Fall back to IMDSv1 if IMDSv2 failed
+    if [ -z "$result" ]; then
+        result=$(curl -s "http://169.254.169.254/latest/meta-data/${path}" \
+            -m 5 2>/dev/null || echo "")
+    fi
+    
+    echo "$result"
+}
+
 # Start deployment
 log "=========================================="
 log "Kamiwaza Official Installation Starting"
@@ -197,17 +234,17 @@ log "✓ Cleaned up temporary package file"
 # Step 3b: Configure KAMIWAZA_ORIGIN (REQUIRED per official guide)
 log "Step 3b: Configuring KAMIWAZA_ORIGIN (required)..."
 
-# Try to detect public IP from EC2 metadata service
+# Try to detect public IP from EC2 metadata service (IMDSv2 compatible)
 PUBLIC_IP=""
-if curl -s -m 5 http://169.254.169.254/latest/meta-data/public-ipv4 &>/dev/null; then
-    PUBLIC_IP=$(curl -s -m 5 http://169.254.169.254/latest/meta-data/public-ipv4)
+PUBLIC_IP=$(get_metadata "public-ipv4")
+if [ -n "$PUBLIC_IP" ]; then
     log "Detected EC2 public IP: $PUBLIC_IP"
 fi
 
 # If we couldn't get public IP, try to get private IP
 if [ -z "$PUBLIC_IP" ]; then
-    if curl -s -m 5 http://169.254.169.254/latest/meta-data/local-ipv4 &>/dev/null; then
-        PUBLIC_IP=$(curl -s -m 5 http://169.254.169.254/latest/meta-data/local-ipv4)
+    PUBLIC_IP=$(get_metadata "local-ipv4")
+    if [ -n "$PUBLIC_IP" ]; then
         log "Using EC2 private IP: $PUBLIC_IP"
     fi
 fi
@@ -385,9 +422,12 @@ fi
 # Step 5: Verify deployment
 log "Step 5: Verifying deployment..."
 
-# Get instance public IP
-PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || echo "unknown")
-PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4 || echo "unknown")
+# Get instance IPs using IMDSv2-compatible helper
+PUBLIC_IP=$(get_metadata "public-ipv4")
+[ -z "$PUBLIC_IP" ] && PUBLIC_IP="unknown"
+PRIVATE_IP=$(get_metadata "local-ipv4")
+[ -z "$PRIVATE_IP" ] && PRIVATE_IP="unknown"
+log "Instance IPs - Public: $PUBLIC_IP, Private: $PRIVATE_IP"
 
 # Step 5.1: Fix Keycloak hostname configuration
 # By default, Keycloak may be configured with 'localhost' which breaks OAuth login

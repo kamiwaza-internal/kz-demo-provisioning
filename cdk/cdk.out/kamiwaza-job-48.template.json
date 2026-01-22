@@ -3,7 +3,7 @@
   "KamiwazaSGFD941D5B": {
    "Type": "AWS::EC2::SecurityGroup",
    "Properties": {
-    "GroupDescription": "Security group for Kamiwaza job 46",
+    "GroupDescription": "Security group for Kamiwaza job 48",
     "SecurityGroupEgress": [
      {
       "CidrIp": "0.0.0.0/0",
@@ -44,7 +44,7 @@
     "VpcId": "vpc-0b534acf5457a44ea"
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-46/KamiwazaSG/Resource"
+    "aws:cdk:path": "kamiwaza-job-48/KamiwazaSG/Resource"
    }
   },
   "InstanceRole3CCE2F1D": {
@@ -62,7 +62,7 @@
      ],
      "Version": "2012-10-17"
     },
-    "Description": "IAM role for Kamiwaza EC2 instance (job 46)",
+    "Description": "IAM role for Kamiwaza EC2 instance (job 48)",
     "ManagedPolicyArns": [
      {
       "Fn::Join": [
@@ -79,7 +79,7 @@
     ]
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-46/InstanceRole/Resource"
+    "aws:cdk:path": "kamiwaza-job-48/InstanceRole/Resource"
    }
   },
   "KamiwazaInstanceInstanceProfileEFBAE96B": {
@@ -92,7 +92,7 @@
     ]
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-46/KamiwazaInstance/InstanceProfile"
+    "aws:cdk:path": "kamiwaza-job-48/KamiwazaInstance/InstanceProfile"
    }
   },
   "KamiwazaInstance361554A9": {
@@ -127,7 +127,7 @@
     "Tags": [
      {
       "Key": "JobId",
-      "Value": "46"
+      "Value": "48"
      },
      {
       "Key": "ManagedBy",
@@ -135,7 +135,7 @@
      },
      {
       "Key": "Name",
-      "Value": "rh6"
+      "Value": "rh9"
      }
     ],
     "UserData": {
@@ -146,7 +146,7 @@
     "InstanceRole3CCE2F1D"
    ],
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-46/KamiwazaInstance/Resource"
+    "aws:cdk:path": "kamiwaza-job-48/KamiwazaInstance/Resource"
    }
   },
   "CDKMetadata": {
@@ -155,7 +155,7 @@
     "Analytics": "v2:deflate64:H4sIAAAAAAAA/1WJQQ6CMBAA38K9rFj0BR6MJ0l5AKl1iSvQknYbQpr+3aDh4GkmMxJkfYaq0EsozXMoR3pAalmbQSgMLnqDQi+hS2gkpBZN9MTr1bs4i0tv/8PNBtbW4HZ2z4L0BEm58Zt37rvxrqcRc97iPfIcOYtm5ZezhxqOJ6iKdyAqfbRME4L68QOWZwCYtwAAAA=="
    },
    "Metadata": {
-    "aws:cdk:path": "kamiwaza-job-46/CDKMetadata/Default"
+    "aws:cdk:path": "kamiwaza-job-48/CDKMetadata/Default"
    }
   }
  },

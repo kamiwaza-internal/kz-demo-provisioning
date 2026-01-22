@@ -278,18 +278,23 @@ class AWSCDKProvisioner:
                 callback(msg)
             logger.info(msg)
 
+        # Get volume size with sensible default
+        volume_size = instance_config.get('volume_size', 100)
+        
         log("=" * 60)
         log(f"STARTING CDK DEPLOYMENT FOR JOB {job_id}")
         log("=" * 60)
         log(f"Region: {credentials.get('region', 'us-west-2')}")
         log(f"Instance Type: {instance_config.get('instance_type', 't3.medium')}")
+        log(f"Volume Size: {volume_size} GB")
         log("")
 
         # Generate CDK context
         context = {
             'jobId': job_id,
             'instanceType': instance_config.get('instance_type', 't3.medium'),
-            'region': credentials.get('region', 'us-west-2')
+            'region': credentials.get('region', 'us-west-2'),
+            'volumeSize': volume_size
         }
 
         if instance_config.get('ami_id'):
@@ -337,7 +342,17 @@ class AWSCDKProvisioner:
             log("=" * 60)
             log("STAGE 1: CDK Synth (Generating CloudFormation template)")
             log("=" * 60)
-            log(f"Context: {json.dumps(context, indent=2)}")
+            
+            # Log context without userData (too long) for readability
+            context_for_log = {k: v for k, v in context.items() if k != 'userData'}
+            log(f"Context: {json.dumps(context_for_log, indent=2)}")
+            
+            # Log user data size separately
+            if 'userData' in context:
+                user_data_size = len(context['userData'])
+                log(f"User Data: {user_data_size} bytes (base64 encoded)")
+                if user_data_size > 14000:
+                    log(f"⚠️  User data is close to 16KB limit - consider using cached AMI")
 
             # Pass context as individual key=value pairs
             context_args = []

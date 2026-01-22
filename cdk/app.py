@@ -31,6 +31,16 @@ class KamiwazaEC2Stack(Stack):
         vpc_id = self.node.try_get_context("vpcId")
         key_pair_name = self.node.try_get_context("keyPairName")
         user_data_b64 = self.node.try_get_context("userData")
+        
+        # Volume size - parse as int, default to 100GB for Kamiwaza
+        volume_size_raw = self.node.try_get_context("volumeSize")
+        try:
+            volume_size = int(volume_size_raw) if volume_size_raw else 100
+        except (ValueError, TypeError):
+            volume_size = 100
+        
+        # Ensure minimum volume size for Kamiwaza (80GB minimum)
+        volume_size = max(volume_size, 80)
 
         # Parse tags - handle both string (JSON) and dict
         tags_raw = self.node.try_get_context("tags") or {}
@@ -144,13 +154,15 @@ class KamiwazaEC2Stack(Stack):
                 ec2.BlockDevice(
                     device_name="/dev/sda1",
                     volume=ec2.BlockDeviceVolume.ebs(
-                        volume_size=80,
+                        volume_size=volume_size,
                         volume_type=ec2.EbsDeviceVolumeType.GP3,
                         encrypted=True,
                         delete_on_termination=True
                     )
                 )
-            ]
+            ],
+            # Require IMDSv2 for enhanced security (optional but recommended)
+            require_imdsv2=True
         )
 
         # Add tags
@@ -192,6 +204,18 @@ class KamiwazaEC2Stack(Stack):
             self, "VpcId",
             value=vpc.vpc_id,
             description="VPC ID (for reuse in future deployments)"
+        )
+
+        CfnOutput(
+            self, "VolumeSize",
+            value=str(volume_size),
+            description="EBS volume size in GB"
+        )
+
+        CfnOutput(
+            self, "InstanceType",
+            value=instance_type,
+            description="EC2 instance type"
         )
 
 

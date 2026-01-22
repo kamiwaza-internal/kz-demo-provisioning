@@ -213,9 +213,25 @@ def execute_cdk_provisioning(job: Job, db, log_message):
         else:
             log_message("warning", f"⚠️  No cached AMI found for version {version}, will use default AMI and full installation")
 
-    # Generate user data script
+    # Generate user data script with size monitoring
+    log_message("info", "Generating user data script...")
     user_data_script = generate_user_data_script(job, db)
+    user_data_raw_size = len(user_data_script)
     user_data_b64 = base64.b64encode(user_data_script.encode()).decode()
+    user_data_b64_size = len(user_data_b64)
+    
+    # Log user data sizes for observability
+    log_message("info", f"User data sizes: raw={user_data_raw_size} bytes, base64={user_data_b64_size} bytes")
+    
+    # Warn if approaching EC2 user data limit (16KB after base64)
+    if user_data_b64_size > 14000:
+        log_message("warning", f"⚠️  User data size ({user_data_b64_size} bytes) is close to 16KB limit!")
+    elif user_data_b64_size > 16384:
+        log_message("error", f"❌ User data size ({user_data_b64_size} bytes) exceeds 16KB limit!")
+        raise Exception(f"User data too large: {user_data_b64_size} bytes exceeds 16KB limit")
+    
+    # Get volume size from job or default
+    volume_size = getattr(job, 'volume_size', None) or 100
 
     instance_config = {
         'instance_type': job.instance_type,
@@ -225,6 +241,7 @@ def execute_cdk_provisioning(job: Job, db, log_message):
         'security_group_ids': job.security_group_ids,
         'key_pair_name': job.key_pair_name,
         'user_data': user_data_b64,
+        'volume_size': volume_size,
         'tags': job.tags or {}
     }
 
@@ -234,6 +251,8 @@ def execute_cdk_provisioning(job: Job, db, log_message):
         'JobId': str(job.id),
         'ManagedBy': 'KamiwazaDeploymentManager'
     })
+    
+    log_message("info", f"Instance config: type={job.instance_type}, volume={volume_size}GB, ami={ami_id_to_use or 'default RHEL 9'}")
 
     # Step 3: Deploy EC2 instance with CDK
     log_message("info", "Deploying EC2 instance with AWS CDK...")
@@ -480,9 +499,10 @@ def generate_kamiwaza_user_data(job: Job, db) -> str:
     # Generate the full user data script
     full_script = "\n".join(user_data_lines)
 
-    # Check size and compress if needed to stay under AWS 25.6KB limit
-    # Base64 encoding adds ~33% overhead, so compress if raw size > 19KB
-    if len(full_script) > 19000:
+    # Check size and compress if needed to stay under AWS 16KB limit (after base64)
+    # Base64 encoding adds ~33% overhead, so compress if raw size > 12KB to be safe
+    # Note: EC2 user data limit is 16KB after base64 encoding
+    if len(full_script) > 12000:
         logger.info(f"User data script is {len(full_script)} bytes, compressing with gzip")
 
         # Compress the script
@@ -490,11 +510,31 @@ def generate_kamiwaza_user_data(job: Job, db) -> str:
         encoded_gzip = base64.b64encode(compressed).decode()
 
         # Create wrapper that decompresses and executes
+        # Using heredoc instead of echo to avoid shell argument length limits
+        # with very long base64 strings (8KB+)
         wrapper = f"""#!/bin/bash
-# Decompress and execute the Kamiwaza deployment script
-echo '{encoded_gzip}' | base64 -d | gunzip | bash
+# Kamiwaza Deployment Script (compressed)
+# Original size: {len(full_script)} bytes
+# Compressed size: {len(compressed)} bytes
+# This wrapper decompresses and executes the full deployment script
+
+set -euo pipefail
+
+# Log start of decompression
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] Decompressing Kamiwaza deployment script..." | tee -a /var/log/kamiwaza-deployment.log
+
+# Use heredoc to avoid shell argument length limits with long base64 strings
+base64 -d << 'COMPRESSED_SCRIPT_EOF' | gunzip | bash
+{encoded_gzip}
+COMPRESSED_SCRIPT_EOF
 """
-        logger.info(f"Compressed user data: {len(full_script)} -> {len(wrapper)} bytes")
+        final_size = len(wrapper)
+        logger.info(f"Compressed user data: {len(full_script)} -> {final_size} bytes (compression ratio: {len(full_script)/final_size:.1f}x)")
+        
+        # Warn if the wrapper is still large
+        if final_size > 14000:
+            logger.warning(f"Compressed user data is {final_size} bytes - close to 16KB limit after base64 encoding")
+        
         return wrapper
     else:
         logger.info(f"User data script is {len(full_script)} bytes, no compression needed")
@@ -546,20 +586,41 @@ def generate_docker_user_data(job: Job, db) -> str:
         "services": compose_services
     }
 
-    # Build user_data script
+    # Build user_data script for RHEL 9 / compatible distributions
     user_data_lines = [
         "#!/bin/bash",
-        "set -e",
+        "set -euo pipefail",
         "",
-        "# Update and install Docker",
-        "yum update -y",
-        "yum install -y docker",
-        "systemctl start docker",
+        "# Logging function",
+        "log() { echo \"[$(date +'%Y-%m-%d %H:%M:%S')] $*\" | tee -a /var/log/docker-deployment.log; }",
+        "",
+        "log 'Starting Docker deployment on RHEL 9...'",
+        "",
+        "# Update system packages using dnf (RHEL 9)",
+        "log 'Updating system packages...'",
+        "dnf update -y -q",
+        "",
+        "# Install Docker CE from official repository (RHEL 9 compatible)",
+        "log 'Installing Docker CE...'",
+        "dnf remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine podman buildah 2>/dev/null || true",
+        "dnf install -y dnf-plugins-core",
+        "dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo",
+        "dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+        "",
+        "# Enable and start Docker service",
+        "log 'Starting Docker service...'",
         "systemctl enable docker",
+        "systemctl start docker",
         "",
-        "# Install docker-compose",
-        "curl -L https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/bin/docker-compose",
-        "chmod +x /usr/local/bin/docker-compose",
+        "# Wait for Docker to be ready",
+        "for i in {1..30}; do docker info >/dev/null 2>&1 && break || sleep 2; done",
+        "",
+        "# Verify Docker is working",
+        "if ! docker info >/dev/null 2>&1; then",
+        "    log 'ERROR: Docker daemon is not responding'",
+        "    exit 1",
+        "fi",
+        "log 'Docker installed and running'",
         "",
         "# Create app directory",
         "mkdir -p /opt/app",
@@ -582,15 +643,18 @@ def generate_docker_user_data(job: Job, db) -> str:
     compose_json = json.dumps(compose_content, indent=2)
     user_data_lines.extend([
         "# Write docker-compose.yml",
-        f"cat > /opt/app/docker-compose.yml << 'EOF'",
+        "cat > /opt/app/docker-compose.yml << 'EOF'",
         compose_json,
         "EOF",
         "",
-        "# Start containers",
+        "# Start containers using docker compose plugin (RHEL 9)",
+        "log 'Starting Docker containers...'",
         "cd /opt/app",
-        "docker-compose up -d",
+        "docker compose up -d",
         "",
         "# Log completion",
+        "log 'Docker deployment complete'",
+        "docker compose ps | tee -a /var/log/docker-deployment.log",
         "echo 'Provisioning complete' > /opt/app/provisioning.log",
     ])
 
