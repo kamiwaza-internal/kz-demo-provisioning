@@ -425,32 +425,32 @@ def generate_user_data_script(job: Job, db) -> str:
 
 
 def generate_kamiwaza_user_data(job: Job, db) -> str:
-    """Generate user_data script for Kamiwaza full stack deployment"""
+    """Generate user_data script for Kamiwaza full stack deployment (RHEL 9 RPM)"""
 
-    # Read the deployment script - now using source-based installation
-    script_path = Path(__file__).parent.parent / "scripts" / "deploy_kamiwaza_from_source.sh"
+    # Read the deployment script - using RPM-based installation for RHEL 9
+    script_path = Path(__file__).parent.parent / "scripts" / "deploy_kamiwaza_full.sh"
     if not script_path.exists():
         raise Exception(f"Kamiwaza deployment script not found at {script_path}")
 
     deployment_script = script_path.read_text()
 
-    # Get source URL - check job tags first, then fall back to environment
-    source_url = None
+    # Get RPM package URL - check job tags first, then fall back to environment
+    package_url = None
     if job.tags and isinstance(job.tags, dict):
-        source_url = job.tags.get("SourceURL")
+        package_url = job.tags.get("PackageURL")
 
-    if not source_url:
-        source_url = os.environ.get("KAMIWAZA_SOURCE_URL", "https://kamiwaza-provisioning-source.s3.us-west-2.amazonaws.com/kamiwaza-release-0.9.2.zip")
+    if not package_url:
+        package_url = os.environ.get("KAMIWAZA_PACKAGE_URL", "https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/rpm/rhel9/x86_64/kamiwaza_v0.9.2_rhel9_x86_64-online_rc18.rpm")
 
     # Get deployment mode from job (defaults to 'full' for backward compatibility)
     deployment_mode = getattr(job, 'kamiwaza_deployment_mode', 'full') or 'full'
 
-    # Build user data with environment variables
+    # Build user data with environment variables for RHEL 9
     user_data_lines = [
         "#!/bin/bash",
         "",
-        "# Kamiwaza Deployment Configuration (Source-based Installation)",
-        f"export KAMIWAZA_SOURCE_URL='{source_url}'",
+        "# Kamiwaza Deployment Configuration (RPM-based Installation for RHEL 9)",
+        f"export KAMIWAZA_PACKAGE_URL='{package_url}'",
         f"export KAMIWAZA_DEPLOYMENT_MODE='{deployment_mode}'",
     ]
 
@@ -471,7 +471,7 @@ def generate_kamiwaza_user_data(job: Job, db) -> str:
 
     user_data_lines.extend([
         "export KAMIWAZA_ROOT='/opt/kamiwaza'",
-        "export KAMIWAZA_USER='ubuntu'",
+        "export KAMIWAZA_USER='ec2-user'",  # RHEL 9 uses ec2-user
         "",
         deployment_script
     ])
