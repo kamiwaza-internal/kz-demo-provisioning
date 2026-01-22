@@ -678,8 +678,20 @@ def execute_kamiwaza_provisioning(self, job_id: int):
 
         log_message("info", f"Loaded CSV file: {job_file.filename}")
 
+        # Override Kamiwaza URL if specified in job
+        original_kamiwaza_url = os.environ.get("KAMIWAZA_URL")
+        if job.kamiwaza_repo:  # URL is stored in kamiwaza_repo field
+            os.environ["KAMIWAZA_URL"] = job.kamiwaza_repo
+            log_message("info", f"Target Kamiwaza instance: {job.kamiwaza_repo}")
+
         # Initialize provisioner
         provisioner = KamiwazaProvisioner()
+
+        # Restore original URL after initialization
+        if original_kamiwaza_url:
+            os.environ["KAMIWAZA_URL"] = original_kamiwaza_url
+        elif job.kamiwaza_repo:
+            del os.environ["KAMIWAZA_URL"]
 
         # Run provisioning with live callback
         success, summary, log_lines = provisioner.run_provisioning(
@@ -697,7 +709,18 @@ def execute_kamiwaza_provisioning(self, job_id: int):
             try:
                 from app.kamiwaza_app_hydrator import KamiwazaAppHydrator
 
+                # Override Kamiwaza URL for hydrator as well
+                if job.kamiwaza_repo:
+                    os.environ["KAMIWAZA_URL"] = job.kamiwaza_repo
+
                 hydrator = KamiwazaAppHydrator()
+
+                # Restore original URL
+                if original_kamiwaza_url:
+                    os.environ["KAMIWAZA_URL"] = original_kamiwaza_url
+                elif job.kamiwaza_repo:
+                    del os.environ["KAMIWAZA_URL"]
+
                 hydration_success, hydration_summary, hydration_logs = hydrator.hydrate_apps_and_tools(
                     callback=lambda line: log_message("info", line)
                 )
@@ -1495,7 +1518,7 @@ def create_ami_after_deployment(self, job_id: int):
         db.commit()
 
         log_message("info", f"✓ AMI creation initiated: {ami_id}")
-        log_message("info", "Waiting for AMI to become available (this may take 10-15 minutes)...")
+        log_message("info", "Waiting for AMI to become available (this may take 20-30 minutes)...")
 
         # Wait for AMI to be available
         waiter = ec2_client.get_waiter('image_available')
@@ -1503,7 +1526,7 @@ def create_ami_after_deployment(self, job_id: int):
             ImageIds=[ami_id],
             WaiterConfig={
                 'Delay': 30,  # Check every 30 seconds
-                'MaxAttempts': 40  # Wait up to 20 minutes
+                'MaxAttempts': 80  # Wait up to 40 minutes (30s * 80 = 2400s)
             }
         )
 

@@ -173,7 +173,13 @@
 
     // Load AMIs on page load
     document.addEventListener('DOMContentLoaded', function() {
-        loadAMIs();
+        // Update AMI statuses from AWS first
+        updateAMIStatuses().then(() => {
+            // Then load the AMI list
+            loadAMIs();
+            // Start polling for pending AMIs
+            startAMIPolling();
+        });
 
         // Handle AMI creation form
         document.getElementById('createAmiForm').addEventListener('submit', async function(e) {
@@ -187,6 +193,54 @@
         currentRegion = this.value;
         loadAMIs();
     });
+
+    // Update AMI statuses from AWS
+    async function updateAMIStatuses() {
+        try {
+            const response = await fetch('/api/amis/update-status', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await response.json();
+
+            if (data.success && data.updated > 0) {
+                console.log(`Updated ${data.updated} AMI statuses`);
+            }
+        } catch (error) {
+            console.error('Error updating AMI statuses:', error);
+        }
+    }
+
+    // Poll for pending AMIs every 30 seconds
+    let pollingInterval = null;
+
+    function startAMIPolling() {
+        // Clear any existing interval
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+        }
+
+        // Poll every 30 seconds
+        pollingInterval = setInterval(async () => {
+            await updateAMIStatuses();
+
+            // Check if there are any pending AMIs in the current view
+            const amiList = document.getElementById('amiList');
+            const hasPendingAMIs = amiList.innerHTML.includes('PENDING');
+
+            if (hasPendingAMIs) {
+                // Reload the AMI list to show updated statuses
+                await loadAMIs();
+            } else {
+                // No pending AMIs, can stop polling (will restart if page reloads)
+                console.log('No pending AMIs detected, stopping polling');
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+        }, 30000); // 30 seconds
+    }
 
     async function loadAMIs() {
         const loadingIndicator = document.getElementById('loadingIndicator');

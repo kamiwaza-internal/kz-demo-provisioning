@@ -660,15 +660,39 @@ async def health_check():
 
 @app.get("/deployment-manager", response_class=HTMLResponse)
 async def deployment_manager_home(
-    request: Request
+    request: Request,
+    db: Session = Depends(get_db)
 ):
     """Display Deployment Manager CSV upload form"""
     csrf_token = csrf_protection.generate_token()
 
+    # Get available Kamiwaza instances (successful deployments that are ready)
+    available_instances = db.query(Job).filter(
+        Job.deployment_type == "kamiwaza",
+        Job.status == "success",
+        Job.kamiwaza_ready == True,
+        Job.public_ip != None
+    ).order_by(Job.completed_at.desc()).limit(10).all()
+
+    # Format instances for dropdown
+    instances = []
+    for job in available_instances:
+        instances.append({
+            "id": job.id,
+            "name": job.job_name,
+            "url": f"https://{job.public_ip}",
+            "public_ip": job.public_ip,
+            "completed_at": job.completed_at.strftime('%Y-%m-%d %H:%M') if job.completed_at else "N/A"
+        })
+
+    # Use settings URL as fallback
+    default_url = settings.kamiwaza_url
+
     return templates.TemplateResponse("deployment_manager.html", {
         "request": request,
         "csrf_token": csrf_token,
-        "kamiwaza_url": settings.kamiwaza_url
+        "kamiwaza_url": default_url,
+        "available_instances": instances
     })
 
 
@@ -677,6 +701,7 @@ async def create_provisioning_job(
     request: Request,
     csrf_token: str = Form(...),
     csv_file: UploadFile = File(...),
+    target_kamiwaza_url: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
     """Create a new Kamiwaza provisioning job"""
@@ -684,6 +709,12 @@ async def create_provisioning_job(
     # Verify CSRF token
     if not csrf_protection.verify_token(csrf_token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
+
+    # Use selected URL or fall back to settings
+    kamiwaza_url = target_kamiwaza_url if target_kamiwaza_url else settings.kamiwaza_url
+
+    if not kamiwaza_url:
+        raise HTTPException(status_code=400, detail="No target Kamiwaza URL specified")
 
     # User provisioning is done to an already-deployed Kamiwaza instance
     # The deployment mode is determined by that instance (must be "full" for user provisioning to work)
@@ -707,6 +738,7 @@ async def create_provisioning_job(
             status="pending",
             deployment_type="docker",  # User provisioning uses docker deployment
             kamiwaza_deployment_mode=deployment_mode,  # Always "full" for user provisioning
+            kamiwaza_repo=kamiwaza_url,  # Store target Kamiwaza URL
             aws_region="N/A",  # Not used for Kamiwaza provisioning
             aws_auth_method="N/A",
             instance_type="N/A",
@@ -1466,6 +1498,139 @@ async def list_amis(
         }, status_code=500)
     except Exception as e:
         logger.error(f"Error listing AMIs: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+
+@app.post("/api/amis/update-status")
+async def update_ami_status(
+    db: Session = Depends(get_db)
+):
+    """Update AMI creation status for jobs with pending AMIs"""
+    try:
+        from app.aws_cdk_provisioner import AWSCDKProvisioner
+        import boto3
+        from botocore.exceptions import ClientError
+
+        # Get credentials
+        provisioner = AWSCDKProvisioner()
+        auth_method = settings.aws_auth_method
+        region = "us-east-1"  # Default region
+
+        credentials = None
+
+        try:
+            if auth_method == "assume_role":
+                role_arn = settings.aws_assume_role_arn
+                external_id = settings.aws_external_id
+                session_name = settings.aws_session_name
+
+                if not role_arn:
+                    raise Exception("AWS_ASSUME_ROLE_ARN not configured")
+
+                credentials = provisioner.assume_role(
+                    role_arn=role_arn,
+                    session_name=session_name,
+                    external_id=external_id,
+                    region=region
+                )
+            elif auth_method == "access_keys":
+                access_key = settings.aws_access_key_id
+                secret_key = settings.aws_secret_access_key
+
+                if not access_key or not secret_key:
+                    raise Exception("AWS credentials not configured")
+
+                credentials = {
+                    'access_key': access_key,
+                    'secret_key': secret_key,
+                    'region': region
+                }
+        except Exception as e:
+            return JSONResponse({
+                "success": False,
+                "error": f"Failed to get AWS credentials: {str(e)}"
+            }, status_code=500)
+
+        # Find jobs with pending AMI creation
+        jobs_with_pending_amis = db.query(Job).filter(
+            Job.ami_creation_status == "creating",
+            Job.created_ami_id.isnot(None)
+        ).all()
+
+        if not jobs_with_pending_amis:
+            return JSONResponse({
+                "success": True,
+                "message": "No jobs with pending AMIs",
+                "updated": 0
+            })
+
+        # Create EC2 client
+        ec2_client = boto3.client(
+            'ec2',
+            region_name=region,
+            aws_access_key_id=credentials.get('access_key'),
+            aws_secret_access_key=credentials.get('secret_key'),
+            aws_session_token=credentials.get('session_token')
+        )
+
+        updated_count = 0
+        for job in jobs_with_pending_amis:
+            try:
+                # Check AMI status in AWS
+                response = ec2_client.describe_images(ImageIds=[job.created_ami_id])
+
+                if response['Images']:
+                    ami = response['Images'][0]
+                    ami_state = ami.get('State', 'unknown')
+
+                    if ami_state == 'available':
+                        # AMI is now available!
+                        job.ami_creation_status = 'completed'
+                        job.ami_created_at = datetime.utcnow()
+
+                        # Add log
+                        from app.models import JobLog
+                        log = JobLog(
+                            job_id=job.id,
+                            level="info",
+                            message=f"✓ AMI {job.created_ami_id} is now available!",
+                            source="ami-status-update"
+                        )
+                        db.add(log)
+                        updated_count += 1
+
+                    elif ami_state == 'failed':
+                        job.ami_creation_status = 'failed'
+                        job.ami_creation_error = 'AMI creation failed in AWS'
+
+                        from app.models import JobLog
+                        log = JobLog(
+                            job_id=job.id,
+                            level="error",
+                            message=f"✗ AMI {job.created_ami_id} creation failed",
+                            source="ami-status-update"
+                        )
+                        db.add(log)
+                        updated_count += 1
+
+            except ClientError as e:
+                logger.warning(f"Error checking AMI {job.created_ami_id} for job {job.id}: {e}")
+                continue
+
+        db.commit()
+
+        return JSONResponse({
+            "success": True,
+            "message": f"Updated {updated_count} AMI statuses",
+            "updated": updated_count,
+            "checked": len(jobs_with_pending_amis)
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating AMI statuses: {str(e)}")
         return JSONResponse({
             "success": False,
             "error": str(e)
