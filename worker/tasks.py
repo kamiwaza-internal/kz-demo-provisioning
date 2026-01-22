@@ -684,20 +684,23 @@ def execute_kamiwaza_provisioning(self, job_id: int):
             os.environ["KAMIWAZA_URL"] = job.kamiwaza_repo
             log_message("info", f"Target Kamiwaza instance: {job.kamiwaza_repo}")
 
-        # Initialize provisioner
-        provisioner = KamiwazaProvisioner()
+        try:
+            # Initialize provisioner (will read KAMIWAZA_URL from environment)
+            provisioner = KamiwazaProvisioner()
 
-        # Restore original URL after initialization
-        if original_kamiwaza_url:
-            os.environ["KAMIWAZA_URL"] = original_kamiwaza_url
-        elif job.kamiwaza_repo:
-            del os.environ["KAMIWAZA_URL"]
-
-        # Run provisioning with live callback
-        success, summary, log_lines = provisioner.run_provisioning(
-            csv_content=csv_content,
-            callback=lambda line: log_message("info", line)
-        )
+            # Run provisioning with live callback
+            success, summary, log_lines = provisioner.run_provisioning(
+                csv_content=csv_content,
+                callback=lambda line: log_message("info", line)
+            )
+        finally:
+            # Restore original URL after provisioning
+            if original_kamiwaza_url:
+                os.environ["KAMIWAZA_URL"] = original_kamiwaza_url
+            elif job.kamiwaza_repo:
+                # Only delete if we set it and there was no original
+                if "KAMIWAZA_URL" in os.environ:
+                    del os.environ["KAMIWAZA_URL"]
 
         # Update job status
         if success:
