@@ -60,24 +60,76 @@ log "✓ OS validation passed: $OS $VER"
 ARCH=$(uname -m)
 log "Architecture: $ARCH"
 
-# Step 1: Update system packages
-log "Step 1: Running 'dnf update'..."
+# Step 1: Install prerequisites (per official RHEL guide)
+log "Step 1: Installing prerequisite packages..."
+dnf install -y -q net-tools gcc-c++ nodejs npm jq pkgconfig \
+fontconfig-devel freetype-devel libX11-devel libXrender-devel \
+libXext-devel libpng-devel libSM-devel pixman-devel libxcb-devel \
+glib2-devel python3-devel libffi-devel gtk3-devel ca-certificates \
+curl libcurl-devel cmake gnupg2 iptables pciutils dos2unix unzip \
+coreutils systemd wget make gcc openssl sqlite ncurses-libs readline \
+libffi xz-libs expat tk zlib-devel bzip2-devel openssl-devel \
+ncurses-devel sqlite-devel readline-devel tk-devel xz-devel \
+expat-devel libuuid-devel yum-utils device-mapper-persistent-data \
+lvm2 git python3.12 python3.12-pip python3.12-devel vim
+
+if [ $? -ne 0 ]; then
+    log "⚠ Warning: Some prerequisite packages may have failed to install"
+    log "Continuing with installation..."
+fi
+log "✓ Prerequisites installed"
+
+# Step 1b: Update system packages
+log "Running system update..."
 dnf update -y -q
 log "✓ System packages updated"
+
+# Step 1c: Install and configure Docker (per official RHEL guide)
+log "Setting up Docker..."
+if ! command -v docker &> /dev/null; then
+    log "Installing Docker..."
+    dnf install -y docker || dnf install -y docker-ce
+    if [ $? -ne 0 ]; then
+        error "Failed to install Docker"
+        exit 1
+    fi
+fi
+
+# Enable and start Docker (required by official guide)
+log "Enabling and starting Docker..."
+systemctl enable docker
+systemctl start docker
+
+# Set Docker socket permissions (required by official guide)
+log "Setting Docker socket permissions..."
+chmod 666 /var/run/docker.sock
+
+log "✓ Docker configured successfully"
 
 # Step 2: Download Kamiwaza RPM package
 log "Step 2: Downloading Kamiwaza RPM package..."
 PACKAGE_FILENAME=$(basename "$KAMIWAZA_PACKAGE_URL")
-wget "$KAMIWAZA_PACKAGE_URL" -P /tmp
 
-if [ $? -ne 0 ]; then
+# Use curl instead of wget for better RHEL 9 compatibility (curl is pre-installed)
+if ! curl -L -o "/tmp/$PACKAGE_FILENAME" "$KAMIWAZA_PACKAGE_URL"; then
     error "Failed to download Kamiwaza package from $KAMIWAZA_PACKAGE_URL"
     exit 1
 fi
+
+# Verify the file was downloaded
+if [ ! -f "/tmp/$PACKAGE_FILENAME" ]; then
+    error "Package file not found at /tmp/$PACKAGE_FILENAME after download"
+    exit 1
+fi
+
 log "✓ Package downloaded to /tmp/$PACKAGE_FILENAME"
 
 # Step 3: Install Kamiwaza RPM package
-log "Step 3: Installing Kamiwaza with 'dnf install -y /tmp/$PACKAGE_FILENAME'..."
+log "Step 3: Installing Kamiwaza RPM package (per official RHEL guide)..."
+
+# Set required environment variables BEFORE installation (per official guide)
+export KAMIWAZA_ACCEPT_LICENSE=yes
+export KAMIWAZA_LICENSE_KEY=""
 
 # Set KAMIWAZA_LITE environment variable BEFORE installation
 if [ "$KAMIWAZA_DEPLOYMENT_MODE" = "lite" ]; then
@@ -88,7 +140,11 @@ else
     export KAMIWAZA_LITE=false
 fi
 
-dnf install -y "/tmp/$PACKAGE_FILENAME"
+log "Installing with license acceptance..."
+log "Command: sudo -E KAMIWAZA_ACCEPT_LICENSE=yes KAMIWAZA_LICENSE_KEY=\"\" dnf install -y /tmp/$PACKAGE_FILENAME"
+
+# Install RPM with environment variables (per official guide)
+sudo -E dnf install -y "/tmp/$PACKAGE_FILENAME"
 
 if [ $? -ne 0 ]; then
     error "Failed to install Kamiwaza RPM package"
@@ -100,6 +156,61 @@ log "✓ Kamiwaza RPM package installed successfully"
 rm -f "/tmp/$PACKAGE_FILENAME"
 log "✓ Cleaned up temporary package file"
 
+# Step 3b: Configure KAMIWAZA_ORIGIN (REQUIRED per official guide)
+log "Step 3b: Configuring KAMIWAZA_ORIGIN (required)..."
+
+# Try to detect public IP from EC2 metadata service
+PUBLIC_IP=""
+if curl -s -m 5 http://169.254.169.254/latest/meta-data/public-ipv4 &>/dev/null; then
+    PUBLIC_IP=$(curl -s -m 5 http://169.254.169.254/latest/meta-data/public-ipv4)
+    log "Detected EC2 public IP: $PUBLIC_IP"
+fi
+
+# If we couldn't get public IP, try to get private IP
+if [ -z "$PUBLIC_IP" ]; then
+    if curl -s -m 5 http://169.254.169.254/latest/meta-data/local-ipv4 &>/dev/null; then
+        PUBLIC_IP=$(curl -s -m 5 http://169.254.169.254/latest/meta-data/local-ipv4)
+        log "Using EC2 private IP: $PUBLIC_IP"
+    fi
+fi
+
+# Fallback to hostname if no IP found
+if [ -z "$PUBLIC_IP" ]; then
+    PUBLIC_IP=$(hostname -I | awk '{print $1}')
+    log "Using local IP: $PUBLIC_IP"
+fi
+
+KAMIWAZA_URL="https://${PUBLIC_IP}"
+log "Setting KAMIWAZA_ORIGIN to: $KAMIWAZA_URL"
+
+# Configure in /opt/kamiwaza/kamiwaza/env.sh
+# Note: The official guide mentions /etc/kamiwaza/env.sh, but the RPM may create /opt/kamiwaza/kamiwaza/env.sh
+ENV_FILE="/opt/kamiwaza/kamiwaza/env.sh"
+if [ ! -f "$ENV_FILE" ]; then
+    # Try alternative location
+    ENV_FILE="/etc/kamiwaza/env.sh"
+fi
+
+if [ -f "$ENV_FILE" ]; then
+    # Add or update KAMIWAZA_ORIGIN
+    if grep -q "^export KAMIWAZA_ORIGIN=" "$ENV_FILE"; then
+        sed -i "s|^export KAMIWAZA_ORIGIN=.*|export KAMIWAZA_ORIGIN=\"${KAMIWAZA_URL}\"|" "$ENV_FILE"
+    else
+        echo "export KAMIWAZA_ORIGIN=\"${KAMIWAZA_URL}\"" >> "$ENV_FILE"
+    fi
+
+    # Add KAMIWAZA_CORS_ORIGINS to match
+    if grep -q "^export KAMIWAZA_CORS_ORIGINS=" "$ENV_FILE"; then
+        sed -i "s|^export KAMIWAZA_CORS_ORIGINS=.*|export KAMIWAZA_CORS_ORIGINS=\"${KAMIWAZA_URL}\"|" "$ENV_FILE"
+    else
+        echo "export KAMIWAZA_CORS_ORIGINS=\"${KAMIWAZA_URL}\"" >> "$ENV_FILE"
+    fi
+
+    log "✓ KAMIWAZA_ORIGIN configured in $ENV_FILE"
+else
+    log "⚠ Warning: Could not find env.sh file to configure KAMIWAZA_ORIGIN"
+fi
+
 # Configure deployment mode
 log "Configuring deployment mode..."
 
@@ -109,11 +220,14 @@ if [ "$KAMIWAZA_DEPLOYMENT_MODE" = "lite" ]; then
     if [ -f /etc/systemd/system/kamiwaza.service ]; then
         sed -i 's/Environment="KAMIWAZA_LITE=false"/Environment="KAMIWAZA_LITE=true"/' /etc/systemd/system/kamiwaza.service || true
     fi
-    # Make sure env.sh has correct settings
-    if [ -f /opt/kamiwaza/kamiwaza/env.sh ]; then
-        sed -i 's/export KAMIWAZA_LITE=false/export KAMIWAZA_LITE=true/' /opt/kamiwaza/kamiwaza/env.sh || true
-        sed -i 's/export KAMIWAZA_USE_AUTH=true/export KAMIWAZA_USE_AUTH=false/' /opt/kamiwaza/kamiwaza/env.sh || true
-    fi
+    # Make sure env.sh has correct settings (check both possible locations)
+    for env_file in /opt/kamiwaza/kamiwaza/env.sh /etc/kamiwaza/env.sh; do
+        if [ -f "$env_file" ]; then
+            sed -i 's/export KAMIWAZA_LITE=false/export KAMIWAZA_LITE=true/' "$env_file" || true
+            sed -i 's/export KAMIWAZA_USE_AUTH=true/export KAMIWAZA_USE_AUTH=false/' "$env_file" || true
+            log "  • Updated $env_file for lite mode"
+        fi
+    done
 else
     log "Ensuring full mode configuration..."
     # Fix systemd service to use KAMIWAZA_LITE=false
@@ -121,12 +235,14 @@ else
         sed -i 's/Environment="KAMIWAZA_LITE=true"/Environment="KAMIWAZA_LITE=false"/' /etc/systemd/system/kamiwaza.service || true
         log "  • Updated systemd service: KAMIWAZA_LITE=false"
     fi
-    # Fix env.sh to enable authentication and disable lite mode
-    if [ -f /opt/kamiwaza/kamiwaza/env.sh ]; then
-        sed -i 's/export KAMIWAZA_LITE=true/export KAMIWAZA_LITE=false/' /opt/kamiwaza/kamiwaza/env.sh || true
-        sed -i 's/export KAMIWAZA_USE_AUTH=false/export KAMIWAZA_USE_AUTH=true/' /opt/kamiwaza/kamiwaza/env.sh || true
-        log "  • Updated env.sh: KAMIWAZA_LITE=false, KAMIWAZA_USE_AUTH=true"
-    fi
+    # Fix env.sh to enable authentication and disable lite mode (check both possible locations)
+    for env_file in /opt/kamiwaza/kamiwaza/env.sh /etc/kamiwaza/env.sh; do
+        if [ -f "$env_file" ]; then
+            sed -i 's/export KAMIWAZA_LITE=true/export KAMIWAZA_LITE=false/' "$env_file" || true
+            sed -i 's/export KAMIWAZA_USE_AUTH=false/export KAMIWAZA_USE_AUTH=true/' "$env_file" || true
+            log "  • Updated $env_file: KAMIWAZA_LITE=false, KAMIWAZA_USE_AUTH=true"
+        fi
+    done
     # Reload systemd to pick up changes
     systemctl daemon-reload
 fi
@@ -139,7 +255,8 @@ log "Step 4: Starting Kamiwaza with 'kamiwaza start'..."
 # Check if kamiwaza command exists
 if ! command -v kamiwaza &> /dev/null; then
     error "kamiwaza command not found after installation"
-    error "The .deb package may not have installed correctly"
+    error "The RPM package may not have installed correctly"
+    error "Check installation logs: /var/log/kamiwaza-postinst-debug.log"
     exit 1
 fi
 
@@ -346,7 +463,7 @@ log "  Stop:    sudo systemctl stop kamiwaza (or kamiwaza stop if available)"
 log "  Status:  docker ps | grep kamiwaza"
 log ""
 log "To remove Kamiwaza:"
-log "  sudo apt remove --purge kamiwaza"
+log "  sudo dnf remove kamiwaza"
 log ""
 log "=========================================="
 
@@ -401,7 +518,7 @@ kamiwaza doctor
 
 ### Complete Uninstall
 \`\`\`bash
-sudo apt remove --purge kamiwaza
+sudo dnf remove kamiwaza
 \`\`\`
 
 ## Troubleshooting
@@ -424,11 +541,11 @@ kamiwaza start
 
 ## Installation Details
 
-This deployment used the official Kamiwaza .deb package installation method:
+This deployment used the official Kamiwaza RPM package installation method:
 
-1. \`sudo apt update\`
-2. \`wget $KAMIWAZA_PACKAGE_URL -P /tmp\`
-3. \`sudo apt install -f -y /tmp/$(basename $KAMIWAZA_PACKAGE_URL)\`
+1. \`sudo dnf update -y\`
+2. \`curl -L -o /tmp/kamiwaza.rpm $KAMIWAZA_PACKAGE_URL\`
+3. \`sudo dnf install -y /tmp/kamiwaza.rpm\`
 4. \`kamiwaza start\`
 
 ## Support
