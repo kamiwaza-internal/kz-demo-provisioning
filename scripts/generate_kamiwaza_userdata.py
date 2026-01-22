@@ -100,25 +100,62 @@ def main():
         kamiwaza_root=args.kamiwaza_root
     )
 
+    raw_size = len(user_data)
+    
     # Format output
     if args.output == "base64":
-        output = base64.b64encode(user_data.encode()).decode()
+        # Auto-compress if raw size is too large for AWS limit
+        if raw_size > 19000:
+            print(f"# Auto-compressing: raw size {raw_size} bytes exceeds 19KB threshold", file=sys.stderr)
+            compressed = gzip.compress(user_data.encode())
+            encoded_gzip = base64.b64encode(compressed).decode()
+            
+            wrapper = f"""#!/bin/bash
+# Kamiwaza Deployment Script (compressed)
+# Original size: {raw_size} bytes
+# Compressed size: {len(compressed)} bytes
+
+set -euo pipefail
+
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] Decompressing Kamiwaza deployment script..." | tee -a /var/log/kamiwaza-deployment.log
+
+base64 -d << 'COMPRESSED_SCRIPT_EOF' | gunzip | bash
+{encoded_gzip}
+COMPRESSED_SCRIPT_EOF
+"""
+            output = base64.b64encode(wrapper.encode()).decode()
+            print(f"# Compressed wrapper: {len(wrapper)} bytes", file=sys.stderr)
+            print(f"# Final base64: {len(output)} bytes", file=sys.stderr)
+        else:
+            output = base64.b64encode(user_data.encode()).decode()
+            
     elif args.output == "compressed":
-        # Compress with gzip and create wrapper script
+        # Compress with gzip and create wrapper script using heredoc
         compressed = gzip.compress(user_data.encode())
         encoded_gzip = base64.b64encode(compressed).decode()
 
-        # Create wrapper that decompresses and executes
+        # Create wrapper that decompresses and executes using heredoc
+        # (avoids shell argument length limits with long base64 strings)
         wrapper = f"""#!/bin/bash
-# Decompress and execute the Kamiwaza deployment script
-echo '{encoded_gzip}' | base64 -d | gunzip | bash
+# Kamiwaza Deployment Script (compressed)
+# Original size: {raw_size} bytes
+# Compressed size: {len(compressed)} bytes
+
+set -euo pipefail
+
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] Decompressing Kamiwaza deployment script..." | tee -a /var/log/kamiwaza-deployment.log
+
+# Use heredoc to avoid shell argument length limits
+base64 -d << 'COMPRESSED_SCRIPT_EOF' | gunzip | bash
+{encoded_gzip}
+COMPRESSED_SCRIPT_EOF
 """
         output = wrapper
 
         # Print size info to stderr for debugging
-        print(f"# Original size: {len(user_data)} bytes", file=sys.stderr)
-        print(f"# Base64 size: {len(base64.b64encode(user_data.encode()).decode())} bytes", file=sys.stderr)
-        print(f"# Compressed size: {len(wrapper)} bytes", file=sys.stderr)
+        print(f"# Original size: {raw_size} bytes", file=sys.stderr)
+        print(f"# Base64 size (uncompressed): {len(base64.b64encode(user_data.encode()).decode())} bytes", file=sys.stderr)
+        print(f"# Compressed wrapper size: {len(wrapper)} bytes", file=sys.stderr)
     else:
         output = user_data
 

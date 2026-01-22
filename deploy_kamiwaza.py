@@ -106,7 +106,7 @@ log "Monitor startup: sudo tail -f /var/log/kamiwaza-startup.log"
         print(f"✓ User data generated for AMI deployment ({len(user_data)} bytes)")
         return user_data_b64
 
-    # Standard deployment with .deb package installation
+    # Standard deployment with RPM package installation
     print(f"Generating user data for package: {package_url}")
 
     script_path = Path(__file__).parent / "scripts" / "deploy_kamiwaza_full.sh"
@@ -125,10 +125,48 @@ log "Monitor startup: sudo tail -f /var/log/kamiwaza-startup.log"
     user_data += "\n"
     user_data += deployment_script
 
+    raw_size = len(user_data)
+    print(f"  Raw user data size: {raw_size} bytes")
+
+    # Compress if size exceeds threshold to stay under AWS 25.6KB limit
+    # Base64 adds ~33% overhead, so compress if raw > 19KB
+    if raw_size > 19000:
+        import gzip
+        print(f"  Compressing user data (raw size {raw_size} > 19000 bytes)...")
+        
+        compressed = gzip.compress(user_data.encode())
+        encoded_gzip = base64.b64encode(compressed).decode()
+        
+        # Create wrapper script that decompresses and executes
+        wrapper = f"""#!/bin/bash
+# Kamiwaza Deployment Script (compressed)
+# Original size: {raw_size} bytes
+# Compressed size: {len(compressed)} bytes
+
+set -euo pipefail
+
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] Decompressing Kamiwaza deployment script..." | tee -a /var/log/kamiwaza-deployment.log
+
+# Use heredoc for large base64 data
+base64 -d << 'COMPRESSED_SCRIPT_EOF' | gunzip | bash
+{encoded_gzip}
+COMPRESSED_SCRIPT_EOF
+"""
+        user_data = wrapper
+        print(f"  Compressed size: {len(wrapper)} bytes (saved {raw_size - len(wrapper)} bytes)")
+
     # Encode to base64
     user_data_b64 = base64.b64encode(user_data.encode()).decode()
-
-    print(f"✓ User data generated ({len(user_data)} bytes)")
+    
+    print(f"✓ User data generated ({len(user_data)} bytes raw, {len(user_data_b64)} bytes base64)")
+    
+    # Warn if close to limit
+    if len(user_data_b64) > 24000:
+        print(f"⚠️  Warning: User data is close to 25.6KB limit!")
+    elif len(user_data_b64) > 25600:
+        print(f"❌ Error: User data exceeds 25.6KB limit!")
+        sys.exit(1)
+    
     return user_data_b64
 
 
