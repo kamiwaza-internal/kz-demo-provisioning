@@ -983,7 +983,6 @@ async def settings_page(
         "KAMIWAZA_USERNAME": os.environ.get("KAMIWAZA_USERNAME", settings.kamiwaza_username),
         "KAMIWAZA_PASSWORD": os.environ.get("KAMIWAZA_PASSWORD", settings.kamiwaza_password),
         "KAMIWAZA_DB_PATH": os.environ.get("KAMIWAZA_DB_PATH", settings.kamiwaza_db_path),
-        "KAMIWAZA_SOURCE_URL": os.environ.get("KAMIWAZA_SOURCE_URL", settings.kamiwaza_source_url),
         "KAMIWAZA_PACKAGE_URL": os.environ.get("KAMIWAZA_PACKAGE_URL", settings.kamiwaza_package_url),
         "APP_GARDEN_URL": os.environ.get("APP_GARDEN_URL", settings.app_garden_url),
         "KAMIWAZA_PROVISION_SCRIPT": os.environ.get("KAMIWAZA_PROVISION_SCRIPT", settings.kamiwaza_provision_script),
@@ -1025,8 +1024,7 @@ async def save_settings(
     kamiwaza_username: str = Form(...),
     kamiwaza_password: str = Form(...),
     kamiwaza_db_path: str = Form(""),
-    kamiwaza_source_url: str = Form(...),
-    kamiwaza_package_url: str = Form(""),
+    kamiwaza_package_url: str = Form(...),
     app_garden_url: str = Form("https://dev-info.kamiwaza.ai/garden/v2/apps.json"),
     provision_script: str = Form(...),
     kaizen_source: str = Form(...),
@@ -1061,8 +1059,7 @@ KAMIWAZA_USERNAME={kamiwaza_username}
 KAMIWAZA_PASSWORD={kamiwaza_password}
 KAMIWAZA_DB_PATH={kamiwaza_db_path}
 
-# Kamiwaza Package
-KAMIWAZA_SOURCE_URL={kamiwaza_source_url}
+# Kamiwaza Package (RPM for RHEL 9)
 KAMIWAZA_PACKAGE_URL={kamiwaza_package_url}
 
 # App Garden & Toolshed
@@ -1108,7 +1105,6 @@ REDIS_URL=redis://localhost:6379/0
         os.environ["KAMIWAZA_USERNAME"] = kamiwaza_username
         os.environ["KAMIWAZA_PASSWORD"] = kamiwaza_password
         os.environ["KAMIWAZA_DB_PATH"] = kamiwaza_db_path
-        os.environ["KAMIWAZA_SOURCE_URL"] = kamiwaza_source_url
         os.environ["KAMIWAZA_PACKAGE_URL"] = kamiwaza_package_url
         os.environ["APP_GARDEN_URL"] = app_garden_url
         os.environ["KAMIWAZA_PROVISION_SCRIPT"] = provision_script
@@ -1135,7 +1131,6 @@ REDIS_URL=redis://localhost:6379/0
             "KAMIWAZA_USERNAME": kamiwaza_username,
             "KAMIWAZA_PASSWORD": kamiwaza_password,
             "KAMIWAZA_DB_PATH": kamiwaza_db_path,
-            "KAMIWAZA_SOURCE_URL": kamiwaza_source_url,
             "KAMIWAZA_PACKAGE_URL": kamiwaza_package_url,
             "APP_GARDEN_URL": app_garden_url,
             "KAMIWAZA_PROVISION_SCRIPT": provision_script,
@@ -2067,7 +2062,7 @@ async def ami_manager_page(
     # Get default package URL from settings
     default_package_url = os.environ.get(
         "KAMIWAZA_PACKAGE_URL",
-        "https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb"
+        "https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/rpm/rhel9/x86_64/kamiwaza_v0.9.2_rhel9_x86_64-online_rc18.rpm"
     )
 
     return templates.TemplateResponse("ami_manager.html", {

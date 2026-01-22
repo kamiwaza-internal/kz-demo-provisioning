@@ -20,11 +20,8 @@ class Settings(BaseSettings):
     kamiwaza_password: str = "kamiwaza"
     kamiwaza_db_path: str = "/opt/kamiwaza/db-lite/kamiwaza.db"
 
-    # Kamiwaza Package (deprecated - use kamiwaza_source_url instead)
-    kamiwaza_package_url: str = "https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/kamiwaza_v0.9.2_noble_x86_64_build3.deb"
-
-    # Kamiwaza Source (for source-based installation)
-    kamiwaza_source_url: str = "https://kamiwaza-provisioning-source.s3.us-west-2.amazonaws.com/kamiwaza-release-0.9.2.zip"
+    # Kamiwaza Package (RPM for RHEL 9)
+    kamiwaza_package_url: str = "https://pub-3feaeada14ef4a368ea38717abd3cf7e.r2.dev/rpm/rhel9/x86_64/kamiwaza_v0.9.2_rhel9_x86_64-online_rc18.rpm"
 
     # App Garden & Toolshed
     app_garden_url: str = "https://dev-info.kamiwaza.ai/garden/v2/apps.json"
