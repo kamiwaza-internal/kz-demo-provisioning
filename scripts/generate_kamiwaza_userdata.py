@@ -16,6 +16,7 @@ Example:
 
 import argparse
 import base64
+import gzip
 import sys
 from pathlib import Path
 
@@ -81,9 +82,9 @@ def main():
     )
     parser.add_argument(
         "--output",
-        choices=["script", "base64"],
+        choices=["script", "base64", "compressed"],
         default="base64",
-        help="Output format: 'script' for raw bash, 'base64' for encoded (default: base64)"
+        help="Output format: 'script' for raw bash, 'base64' for encoded, 'compressed' for gzip+base64 wrapper (default: base64)"
     )
     parser.add_argument(
         "--output-file",
@@ -102,6 +103,22 @@ def main():
     # Format output
     if args.output == "base64":
         output = base64.b64encode(user_data.encode()).decode()
+    elif args.output == "compressed":
+        # Compress with gzip and create wrapper script
+        compressed = gzip.compress(user_data.encode())
+        encoded_gzip = base64.b64encode(compressed).decode()
+
+        # Create wrapper that decompresses and executes
+        wrapper = f"""#!/bin/bash
+# Decompress and execute the Kamiwaza deployment script
+echo '{encoded_gzip}' | base64 -d | gunzip | bash
+"""
+        output = wrapper
+
+        # Print size info to stderr for debugging
+        print(f"# Original size: {len(user_data)} bytes", file=sys.stderr)
+        print(f"# Base64 size: {len(base64.b64encode(user_data.encode()).decode())} bytes", file=sys.stderr)
+        print(f"# Compressed size: {len(wrapper)} bytes", file=sys.stderr)
     else:
         output = user_data
 

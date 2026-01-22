@@ -84,27 +84,65 @@ log "Running system update..."
 dnf update -y -q
 log "✓ System packages updated"
 
-# Step 1c: Install and configure Docker (per official RHEL guide)
-log "Setting up Docker..."
+# Step 1c: Install and configure Docker (RHEL 9 compatible)
+log "Setting up Docker for RHEL 9..."
+
+# Check if Docker is already installed
 if ! command -v docker &> /dev/null; then
-    log "Installing Docker..."
-    dnf install -y docker || dnf install -y docker-ce
+    log "Docker not found, installing from Docker's official repository..."
+
+    # Remove conflicting packages if any
+    dnf remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine podman buildah 2>/dev/null || true
+
+    # Install prerequisites
+    dnf install -y dnf-plugins-core
+
+    # Add Docker's official repository
+    dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+
+    # Install Docker Engine
+    log "Installing Docker CE (Container Engine)..."
+    dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
     if [ $? -ne 0 ]; then
-        error "Failed to install Docker"
+        error "Failed to install Docker CE"
         exit 1
     fi
+
+    log "✓ Docker CE installed successfully"
+else
+    log "✓ Docker already installed"
 fi
 
-# Enable and start Docker (required by official guide)
-log "Enabling and starting Docker..."
+# Enable and start Docker service
+log "Enabling and starting Docker service..."
 systemctl enable docker
 systemctl start docker
 
-# Set Docker socket permissions (required by official guide)
+# Wait for Docker to be ready
+log "Waiting for Docker daemon to be ready..."
+for i in {1..30}; do
+    if docker info >/dev/null 2>&1; then
+        log "✓ Docker daemon is ready"
+        break
+    fi
+    sleep 2
+done
+
+# Verify Docker is working
+if ! docker info >/dev/null 2>&1; then
+    error "Docker daemon is not responding"
+    exit 1
+fi
+
+# Set Docker socket permissions (required for Kamiwaza)
 log "Setting Docker socket permissions..."
 chmod 666 /var/run/docker.sock
 
-log "✓ Docker configured successfully"
+# Add ec2-user to docker group (optional but useful)
+usermod -aG docker $KAMIWAZA_USER 2>/dev/null || true
+
+log "✓ Docker configured and running successfully"
 
 # Step 2: Download Kamiwaza RPM package
 log "Step 2: Downloading Kamiwaza RPM package..."

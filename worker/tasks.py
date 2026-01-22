@@ -1,6 +1,7 @@
 import os
 import json
 import base64
+import gzip
 from datetime import datetime
 from pathlib import Path
 from typing import Dict
@@ -476,7 +477,28 @@ def generate_kamiwaza_user_data(job: Job, db) -> str:
         deployment_script
     ])
 
-    return "\n".join(user_data_lines)
+    # Generate the full user data script
+    full_script = "\n".join(user_data_lines)
+
+    # Check size and compress if needed to stay under AWS 25.6KB limit
+    # Base64 encoding adds ~33% overhead, so compress if raw size > 19KB
+    if len(full_script) > 19000:
+        logger.info(f"User data script is {len(full_script)} bytes, compressing with gzip")
+
+        # Compress the script
+        compressed = gzip.compress(full_script.encode())
+        encoded_gzip = base64.b64encode(compressed).decode()
+
+        # Create wrapper that decompresses and executes
+        wrapper = f"""#!/bin/bash
+# Decompress and execute the Kamiwaza deployment script
+echo '{encoded_gzip}' | base64 -d | gunzip | bash
+"""
+        logger.info(f"Compressed user data: {len(full_script)} -> {len(wrapper)} bytes")
+        return wrapper
+    else:
+        logger.info(f"User data script is {len(full_script)} bytes, no compression needed")
+        return full_script
 
 
 def generate_docker_user_data(job: Job, db) -> str:
