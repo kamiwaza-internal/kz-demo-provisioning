@@ -66,6 +66,15 @@ class Job(Base):
     kamiwaza_ready = Column(Boolean, default=False)
     kamiwaza_checked_at = Column(DateTime, nullable=True)
     kamiwaza_check_attempts = Column(Integer, default=0)
+    
+    # Detailed deployment tracking for Kamiwaza
+    # Stages: infrastructure_creating, infrastructure_ready, installing_packages, 
+    #         installing_docker, downloading_kamiwaza, installing_kamiwaza,
+    #         starting_containers, waiting_for_services, login_accessible
+    deployment_stage = Column(String(50), nullable=True)
+    deployment_stage_updated_at = Column(DateTime, nullable=True)
+    deployment_console_lines = Column(Integer, default=0)  # Track console output progress
+    deployment_services_count = Column(String(10), nullable=True)  # e.g., "3/5"
 
     # AMI Creation (for caching)
     created_ami_id = Column(String(100), nullable=True)  # AMI created from this deployment

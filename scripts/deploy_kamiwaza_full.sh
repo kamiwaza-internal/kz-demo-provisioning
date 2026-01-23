@@ -392,13 +392,24 @@ log "Waiting for Kamiwaza services to initialize..."
 log "This may take several minutes as Docker images are pulled and containers start..."
 
 # Function to check service health
+# Note: We need to use a login shell (-l) or set PATH explicitly because
+# kamiwaza is typically installed in /opt/kamiwaza/bin or similar
 check_kamiwaza_status() {
-    sudo -u $KAMIWAZA_USER bash -c "kamiwaza status" 2>/dev/null
+    # Try login shell first, fall back to explicit path
+    sudo -u $KAMIWAZA_USER bash -l -c "kamiwaza status" 2>/dev/null || \
+    sudo -u $KAMIWAZA_USER bash -c "source ~/.bashrc 2>/dev/null; kamiwaza status" 2>/dev/null || \
+    sudo -u $KAMIWAZA_USER /opt/kamiwaza/bin/kamiwaza status 2>/dev/null || \
+    /opt/kamiwaza/bin/kamiwaza status 2>/dev/null || \
+    echo "STATUS_CHECK_FAILED"
 }
 
 # Function to count running services
 count_running_services() {
-    check_kamiwaza_status | grep -c "RUNNING" || echo "0"
+    local count
+    count=$(check_kamiwaza_status | grep -c "RUNNING" 2>/dev/null || echo "0")
+    # Ensure we return a valid integer (strip whitespace, default to 0)
+    count=$(echo "$count" | tr -d '[:space:]')
+    [[ "$count" =~ ^[0-9]+$ ]] && echo "$count" || echo "0"
 }
 
 # Function to check for error state
@@ -533,6 +544,11 @@ fi
 if docker ps &> /dev/null; then
     CONTAINER_COUNT=$(docker ps | grep -c kamiwaza || true)
     log "✓ Docker accessible, found $CONTAINER_COUNT Kamiwaza containers"
+    log ""
+    log "Docker Container Status:"
+    log "========================"
+    docker ps --format "table {{.Names}}\t{{.Status}}" | tee -a /var/log/kamiwaza-deployment.log
+    log ""
 fi
 
 # Display completion information
@@ -568,7 +584,15 @@ log ""
 log "Management Commands:"
 log "  Start:   kamiwaza start"
 log "  Stop:    sudo systemctl stop kamiwaza (or kamiwaza stop if available)"
-log "  Status:  docker ps | grep kamiwaza"
+log "  Status:  docker ps --format 'table {{.Names}}\t{{.Status}}'"
+log ""
+log "Container Health:"
+if docker ps &> /dev/null; then
+    HEALTHY_COUNT=$(docker ps --format '{{.Status}}' | grep -c "healthy" || echo "0")
+    TOTAL_COUNT=$(docker ps | wc -l)
+    TOTAL_COUNT=$((TOTAL_COUNT - 1))  # Subtract header line
+    log "  $HEALTHY_COUNT/$TOTAL_COUNT containers reporting healthy"
+fi
 log ""
 log "To remove Kamiwaza:"
 log "  sudo dnf remove kamiwaza"

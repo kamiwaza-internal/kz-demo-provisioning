@@ -116,6 +116,11 @@ class JobResponse(BaseModel):
     kamiwaza_check_attempts: Optional[int] = 0
     kamiwaza_checked_at: Optional[datetime] = None
     selected_apps: Optional[List[str]] = []
+    # Deployment tracking
+    deployment_stage: Optional[str] = None
+    deployment_stage_updated_at: Optional[datetime] = None
+    deployment_console_lines: Optional[int] = 0
+    deployment_services_count: Optional[str] = None
     created_at: datetime
     started_at: Optional[datetime]
     completed_at: Optional[datetime]

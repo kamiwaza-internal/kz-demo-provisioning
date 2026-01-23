@@ -270,11 +270,20 @@ def execute_cdk_provisioning(job: Job, db, log_message):
         job.public_ip = outputs.get('PublicIP')
         job.private_ip = outputs.get('PrivateIP')
         job.terraform_outputs = outputs  # Store all outputs
+        
+        # For Kamiwaza deployments, keep status as "success" but don't consider complete
+        # until kamiwaza_ready = True. The UI will show "deploying" state.
         job.status = "success"
         job.completed_at = datetime.utcnow()
+        
+        # Set initial deployment stage for Kamiwaza deployments
+        if job.deployment_type == "kamiwaza":
+            job.deployment_stage = "infrastructure_ready"
+            job.deployment_stage_updated_at = datetime.utcnow()
+        
         db.commit()
 
-        log_message("info", "✓ CDK deployment completed successfully")
+        log_message("info", "✓ EC2 instance launched successfully")
         if job.instance_id:
             log_message("info", f"Instance ID: {job.instance_id}")
         if job.public_ip:
@@ -282,20 +291,31 @@ def execute_cdk_provisioning(job: Job, db, log_message):
         if job.private_ip:
             log_message("info", f"Private IP: {job.private_ip}")
 
-        # Send success email
-        send_completion_email(job, db)
-
         # For Kamiwaza deployments, start log streaming and readiness check
         if job.deployment_type == "kamiwaza":
+            log_message("info", "")
+            log_message("info", "=" * 50)
+            log_message("info", "Kamiwaza Installation In Progress")
+            log_message("info", "=" * 50)
+            log_message("info", "The EC2 instance is now running and Kamiwaza is being installed.")
+            log_message("info", "This process typically takes 30-50 minutes.")
+            log_message("info", "")
+            log_message("info", f"Target URL: https://{job.public_ip}")
+            log_message("info", "")
+            log_message("info", "Monitor progress in the Deployment Progress section above.")
+            log_message("info", "The page will auto-reload when Kamiwaza is ready.")
+            log_message("info", "=" * 50)
+            
             log_message("info", "Starting Kamiwaza log streaming...")
             # Start streaming logs immediately (iteration 0)
             stream_kamiwaza_logs.apply_async(args=[job.id, job.instance_id, job.aws_region, 0], countdown=30)
 
             log_message("info", "Starting Kamiwaza readiness checks (will begin in 3 minutes)...")
             # Schedule first check in 3 minutes to give Kamiwaza time to start
-            # The deployment script already waits ~5 minutes for services to initialize
-            # But HTTPS endpoint may take additional time to become accessible
             check_kamiwaza_readiness.apply_async(args=[job.id], countdown=180)
+        else:
+            # For non-Kamiwaza deployments, send completion email immediately
+            send_completion_email(job, db)
 
     else:
         raise Exception("CDK deployment failed - see logs for details")
@@ -1384,6 +1404,8 @@ def check_kamiwaza_readiness(self, job_id: int):
                     if 'kamiwaza' in content.lower() or 'login' in content.lower():
                         logger.info(f"✓ Kamiwaza login page is accessible for job {job_id}")
                         job.kamiwaza_ready = True
+                        job.deployment_stage = "login_accessible"
+                        job.deployment_stage_updated_at = datetime.utcnow()
                         db.commit()
 
                         # Log success message
@@ -1394,7 +1416,47 @@ def check_kamiwaza_readiness(self, job_id: int):
                             source="readiness-check"
                         )
                         db.add(log)
+                        
+                        # Log completion message with access details
+                        log = JobLog(
+                            job_id=job.id,
+                            level="info",
+                            message="=" * 50,
+                            source="deployment"
+                        )
+                        db.add(log)
+                        log = JobLog(
+                            job_id=job.id,
+                            level="info",
+                            message="🎉 Kamiwaza Deployment Complete!",
+                            source="deployment"
+                        )
+                        db.add(log)
+                        log = JobLog(
+                            job_id=job.id,
+                            level="info",
+                            message=f"Access your instance at: https://{job.public_ip}",
+                            source="deployment"
+                        )
+                        db.add(log)
+                        log = JobLog(
+                            job_id=job.id,
+                            level="info",
+                            message="Default credentials: admin / kamiwaza",
+                            source="deployment"
+                        )
+                        db.add(log)
+                        log = JobLog(
+                            job_id=job.id,
+                            level="info",
+                            message="=" * 50,
+                            source="deployment"
+                        )
+                        db.add(log)
                         db.commit()
+                        
+                        # Send completion email now that Kamiwaza is ready
+                        send_completion_email(job, db)
 
                         # Deploy apps and tools if selected (for Kamiwaza-only deployments without user provisioning)
                         if not job.users_data or len(job.users_data) == 0:

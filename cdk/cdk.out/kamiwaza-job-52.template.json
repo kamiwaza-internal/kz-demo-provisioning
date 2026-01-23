@@ -1,0 +1,266 @@
+{
+ "Resources": {
+  "KamiwazaSGFD941D5B": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "Security group for Kamiwaza job 52",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "SecurityGroupIngress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow SSH",
+      "FromPort": 22,
+      "IpProtocol": "tcp",
+      "ToPort": 22
+     },
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow HTTP",
+      "FromPort": 80,
+      "IpProtocol": "tcp",
+      "ToPort": 80
+     },
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow HTTPS",
+      "FromPort": 443,
+      "IpProtocol": "tcp",
+      "ToPort": 443
+     },
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow Docker app ports",
+      "FromPort": 8000,
+      "IpProtocol": "tcp",
+      "ToPort": 8100
+     }
+    ],
+    "VpcId": "vpc-0b534acf5457a44ea"
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-52/KamiwazaSG/Resource"
+   }
+  },
+  "InstanceRole3CCE2F1D": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ec2.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Description": "IAM role for Kamiwaza EC2 instance (job 52)",
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/AmazonSSMManagedInstanceCore"
+       ]
+      ]
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-52/InstanceRole/Resource"
+   }
+  },
+  "KamiwazaInstanceInstanceProfileEFBAE96B": {
+   "Type": "AWS::IAM::InstanceProfile",
+   "Properties": {
+    "Roles": [
+     {
+      "Ref": "InstanceRole3CCE2F1D"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-52/KamiwazaInstance/InstanceProfile"
+   }
+  },
+  "KamiwazaInstance361554A9": {
+   "Type": "AWS::EC2::Instance",
+   "Properties": {
+    "AvailabilityZone": "us-east-1a",
+    "BlockDeviceMappings": [
+     {
+      "DeviceName": "/dev/sda1",
+      "Ebs": {
+       "DeleteOnTermination": true,
+       "Encrypted": true,
+       "VolumeSize": 100,
+       "VolumeType": "gp3"
+      }
+     }
+    ],
+    "IamInstanceProfile": {
+     "Ref": "KamiwazaInstanceInstanceProfileEFBAE96B"
+    },
+    "ImageId": "ami-0da265867ccdd23bd",
+    "InstanceType": "t3.xlarge",
+    "LaunchTemplate": {
+     "LaunchTemplateName": "kamiwazajob52KamiwazaInstanceLaunchTemplateDA16F3B9",
+     "Version": {
+      "Fn::GetAtt": [
+       "KamiwazaInstanceLaunchTemplate5C56C315",
+       "LatestVersionNumber"
+      ]
+     }
+    },
+    "SecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "KamiwazaSGFD941D5B",
+       "GroupId"
+      ]
+     }
+    ],
+    "SubnetId": "subnet-0703871201568cc4d",
+    "Tags": [
+     {
+      "Key": "JobId",
+      "Value": "52"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "KamiwazaDeploymentManager"
+     },
+     {
+      "Key": "Name",
+      "Value": "rh13"
+     }
+    ],
+    "UserData": {
+     "Fn::Base64": "#!/bin/bash\n# Kamiwaza Deployment Script (compressed)\n# Original size: 23109 bytes\n# Compressed size: 6782 bytes\n# This wrapper decompresses and executes the full deployment script\n\nset -euo pipefail\n\n# Log start of decompression\necho \"[$(date +'%Y-%m-%d %H:%M:%S')] Decompressing Kamiwaza deployment script...\" | tee -a /var/log/kamiwaza-deployment.log\n\n# Use heredoc to avoid shell argument length limits with long base64 strings\nbase64 -d << 'COMPRESSED_SCRIPT_EOF' | gunzip | bash\n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\nCOMPRESSED_SCRIPT_EOF\n"
+    }
+   },
+   "DependsOn": [
+    "InstanceRole3CCE2F1D"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-52/KamiwazaInstance/Resource"
+   }
+  },
+  "KamiwazaInstanceLaunchTemplate5C56C315": {
+   "Type": "AWS::EC2::LaunchTemplate",
+   "Properties": {
+    "LaunchTemplateData": {
+     "MetadataOptions": {
+      "HttpTokens": "required"
+     }
+    },
+    "LaunchTemplateName": "kamiwazajob52KamiwazaInstanceLaunchTemplateDA16F3B9"
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-52/KamiwazaInstance/LaunchTemplate"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/1WLQQrCMBBFz+I+HWurJ3AhgmBp3csYpzQ2TUoyoZSQu0uVgq7e5z1+AUV5gHyDk8/ks8+0ekBsGGUvavI2OEkCJ3+PJAuIDcngFM8nZ8Mojq35F2fjGY2kpfzuCwYjuxsNo0amJBQOEGurP3HleqicbZWmlBZ5DTwGTqKaubNmW8JuD/nm5ZXKXDCsBoL6yzdlkQbkyQAAAA=="
+   },
+   "Metadata": {
+    "aws:cdk:path": "kamiwaza-job-52/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "InstanceId": {
+   "Description": "EC2 Instance ID",
+   "Value": {
+    "Ref": "KamiwazaInstance361554A9"
+   }
+  },
+  "PublicIP": {
+   "Description": "Public IP address",
+   "Value": {
+    "Fn::GetAtt": [
+     "KamiwazaInstance361554A9",
+     "PublicIp"
+    ]
+   }
+  },
+  "PrivateIP": {
+   "Description": "Private IP address",
+   "Value": {
+    "Fn::GetAtt": [
+     "KamiwazaInstance361554A9",
+     "PrivateIp"
+    ]
+   }
+  },
+  "SecurityGroupId": {
+   "Description": "Security Group ID",
+   "Value": {
+    "Fn::GetAtt": [
+     "KamiwazaSGFD941D5B",
+     "GroupId"
+    ]
+   }
+  },
+  "VpcId": {
+   "Description": "VPC ID (for reuse in future deployments)",
+   "Value": "vpc-0b534acf5457a44ea"
+  },
+  "VolumeSize": {
+   "Description": "EBS volume size in GB",
+   "Value": "100"
+  },
+  "InstanceType": {
+   "Description": "EC2 instance type",
+   "Value": "t3.xlarge"
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

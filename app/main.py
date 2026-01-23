@@ -2589,10 +2589,14 @@ async def get_console_output(
     job_id: int,
     db: Session = Depends(get_db)
 ):
-    """Get EC2 console output for a job's instance"""
+    """Get EC2 console output for a job's instance with detailed deployment tracking"""
     try:
         import boto3
         from botocore.exceptions import ClientError
+        import re
+        import socket
+        import ssl
+        import urllib.request
         
         job = db.query(Job).filter(Job.id == job_id).first()
         if not job:
@@ -2604,8 +2608,12 @@ async def get_console_output(
         if not job.instance_id:
             return JSONResponse({
                 "success": False,
-                "error": "No instance associated with this job"
-            }, status_code=400)
+                "error": "No instance associated with this job",
+                "stages": {},
+                "progress": 0,
+                "current_stage": "infrastructure_creating",
+                "current_stage_name": "Creating Infrastructure"
+            })
         
         # Get credentials
         from app.aws_cdk_provisioner import AWSCDKProvisioner
@@ -2664,66 +2672,152 @@ async def get_console_output(
         )
         
         output = response.get('Output', '')
+        lines = output.split('\n')
         
-        # Parse deployment stages from console output
-        stages = {
-            "boot": {"name": "System Boot", "complete": False, "pattern": "cloud-init"},
-            "packages": {"name": "Installing Packages", "complete": False, "pattern": "Prerequisites installed"},
-            "docker": {"name": "Installing Docker", "complete": False, "pattern": "Docker "},
-            "kamiwaza_download": {"name": "Downloading Kamiwaza", "complete": False, "pattern": "Downloading Kamiwaza"},
-            "kamiwaza_install": {"name": "Installing Kamiwaza RPM", "complete": False, "pattern": "Installing.*kamiwaza"},
-            "containers": {"name": "Starting Containers", "complete": False, "pattern": "Starting Docker|docker compose"},
-            "ready": {"name": "Kamiwaza Ready", "complete": False, "pattern": "Kamiwaza.*ready|Login page accessible"}
-        }
+        # Define deployment stages with detection patterns and order
+        stage_definitions = [
+            {"key": "boot", "name": "System Boot", "patterns": ["cloud-init.*started", "cloud-init\\["], "weight": 5},
+            {"key": "packages", "name": "Installing Packages", "patterns": ["Prerequisites installed", "Step 1.*Installing"], "weight": 10},
+            {"key": "docker", "name": "Installing Docker", "patterns": ["Docker CE installed", "Docker.*configured", "docker-ce"], "weight": 15},
+            {"key": "ssm", "name": "Installing SSM Agent", "patterns": ["SSM Agent installed", "amazon-ssm-agent"], "weight": 5},
+            {"key": "download", "name": "Downloading Kamiwaza", "patterns": ["Downloading Kamiwaza", "Step 2.*Downloading", "kamiwaza.*rpm"], "weight": 10},
+            {"key": "install", "name": "Installing Kamiwaza", "patterns": ["Installing.*kamiwaza", "kamiwaza-0\\.9"], "weight": 15},
+            {"key": "configure", "name": "Configuring Kamiwaza", "patterns": ["Step 3.*Configuring", "kamiwaza start", "Deployment mode"], "weight": 10},
+            {"key": "containers", "name": "Starting Containers", "patterns": ["docker_gwbridge", "Starting Docker", "libcontainer"], "weight": 15},
+            {"key": "services", "name": "Waiting for Services", "patterns": ["Status check.*\\d+/300", "services running", "Waiting for Kamiwaza"], "weight": 10},
+            {"key": "ready", "name": "Kamiwaza Ready", "patterns": ["Installation Completed", "Login page accessible"], "weight": 5},
+        ]
         
         # Check which stages are complete
-        import re
-        for stage_key, stage_info in stages.items():
-            if re.search(stage_info["pattern"], output, re.IGNORECASE):
-                stage_info["complete"] = True
+        stages = {}
+        current_stage = "boot"
+        current_stage_name = "System Boot"
+        total_weight = sum(s["weight"] for s in stage_definitions)
+        completed_weight = 0
         
-        # Calculate progress percentage based on stages
-        completed_stages = sum(1 for s in stages.values() if s["complete"])
-        total_stages = len(stages)
-        progress = int((completed_stages / total_stages) * 100)
+        for stage_def in stage_definitions:
+            is_complete = False
+            for pattern in stage_def["patterns"]:
+                if re.search(pattern, output, re.IGNORECASE):
+                    is_complete = True
+                    break
+            
+            stages[stage_def["key"]] = {
+                "name": stage_def["name"],
+                "complete": is_complete
+            }
+            
+            if is_complete:
+                completed_weight += stage_def["weight"]
+                # Update current stage to next incomplete stage
+                idx = stage_definitions.index(stage_def)
+                if idx + 1 < len(stage_definitions):
+                    next_stage = stage_definitions[idx + 1]
+                    current_stage = next_stage["key"]
+                    current_stage_name = next_stage["name"]
         
-        # Also check port 443 for final readiness
-        import socket
+        # Calculate progress
+        progress = int((completed_weight / total_weight) * 100)
+        
+        # Parse service status from console
+        services_count = "0/5"
+        service_matches = re.findall(r'(\d+)/5 services running', output)
+        if service_matches:
+            services_count = f"{service_matches[-1]}/5"
+        
+        # Check port 443 and login page accessibility
         port_443_open = False
+        login_accessible = False
+        http_status = None
+        
         if job.public_ip:
+            # Check port 443
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
+            sock.settimeout(3)
             result = sock.connect_ex((job.public_ip, 443))
             port_443_open = (result == 0)
             sock.close()
             
             if port_443_open:
-                stages["ready"]["complete"] = True
-                progress = 100
+                stages["containers"]["complete"] = True
+                # Try to access login page
+                try:
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    
+                    req = urllib.request.Request(f"https://{job.public_ip}/", method='GET')
+                    resp = urllib.request.urlopen(req, timeout=10, context=ctx)
+                    http_status = resp.status
+                    
+                    if resp.status == 200:
+                        content = resp.read().decode('utf-8', errors='ignore').lower()
+                        if 'kamiwaza' in content or 'login' in content or 'keycloak' in content:
+                            login_accessible = True
+                            stages["ready"]["complete"] = True
+                            current_stage = "complete"
+                            current_stage_name = "Deployment Complete"
+                            progress = 100
+                except urllib.error.HTTPError as e:
+                    http_status = e.code
+                    if e.code == 502:
+                        current_stage = "services"
+                        current_stage_name = "Waiting for Backend Services"
+                    elif e.code == 503:
+                        current_stage = "services"
+                        current_stage_name = "Services Starting"
+                except Exception:
+                    pass
         
-        # Extract last N lines for display (filter out noise)
-        lines = output.split('\n')
-        # Filter to show meaningful lines
-        meaningful_lines = []
+        # Extract deployment log lines (with timestamps)
+        deployment_lines = []
         for line in lines:
-            # Skip empty lines and common noise
-            if not line.strip():
-                continue
-            # Keep lines with timestamps or deployment-related content
-            if any(marker in line for marker in ['cloud-init', 'Step', 'kamiwaza', 'docker', 'Installing', 'Downloaded', 'Starting', 'Error', 'Warning', '✓', '✗']):
-                meaningful_lines.append(line)
+            if 'cloud-init' in line and '[2' in line:  # Lines with timestamps
+                # Clean up the line
+                clean = re.sub(r'\[\s*\d+\.\d+\]\s*cloud-init\[\d+\]:\s*', '', line)
+                if clean.strip():
+                    deployment_lines.append(clean.strip())
         
-        # Return last 100 meaningful lines
-        display_lines = meaningful_lines[-100:]
+        # Get last 50 deployment lines
+        display_lines = deployment_lines[-50:]
+        
+        # Update job's deployment tracking fields
+        from datetime import datetime
+        job.deployment_stage = current_stage
+        job.deployment_stage_updated_at = datetime.utcnow()
+        job.deployment_console_lines = len(lines)
+        job.deployment_services_count = services_count
+        
+        # If login is accessible, mark kamiwaza_ready
+        if login_accessible and not job.kamiwaza_ready:
+            job.kamiwaza_ready = True
+            job.kamiwaza_checked_at = datetime.utcnow()
+            # Add log entry
+            log = JobLog(
+                job_id=job.id,
+                level="info",
+                message="✓ Kamiwaza login page is now accessible!",
+                source="deployment-tracker"
+            )
+            db.add(log)
+        
+        db.commit()
         
         return JSONResponse({
             "success": True,
             "instance_id": job.instance_id,
             "output": "\n".join(display_lines),
-            "line_count": len(lines),
-            "stages": {k: {"name": v["name"], "complete": v["complete"]} for k, v in stages.items()},
+            "raw_line_count": len(lines),
+            "deployment_line_count": len(deployment_lines),
+            "stages": stages,
             "progress": progress,
-            "port_443_open": port_443_open
+            "current_stage": current_stage,
+            "current_stage_name": current_stage_name,
+            "services_count": services_count,
+            "port_443_open": port_443_open,
+            "http_status": http_status,
+            "login_accessible": login_accessible,
+            "kamiwaza_ready": job.kamiwaza_ready
         })
         
     except ClientError as e:
