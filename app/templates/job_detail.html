@@ -130,7 +130,7 @@
 
             <div class="alert alert-warning" style="margin-top: 1rem;">
                 <strong>EC2 Instance Launched Successfully</strong><br>
-                Kamiwaza is currently being installed on the EC2 instance. This process typically takes 10-20 minutes.
+                Kamiwaza is currently being installed on the EC2 instance. This process typically takes 20-40 minutes.
             </div>
 
             <div style="margin: 1.5rem 0;" id="kamiwaza-progress-container">
@@ -139,15 +139,36 @@
                     <span id="kamiwaza-status">Checking status...</span>
                 </p>
 
-                <!-- Progress bar -->
+                <!-- Progress bar (real progress based on stages) -->
                 <div style="width: 100%; background: #e0e0e0; border-radius: 4px; height: 24px; margin: 1rem 0; overflow: hidden;">
                     <div id="progress-bar" style="height: 100%; background: linear-gradient(90deg, #4caf50, #8bc34a); width: 0%; transition: width 0.5s ease; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.9rem;">
                     </div>
                 </div>
 
-                <p style="color: #666; font-size: 0.9rem;">
-                    Checks performed: <span id="check-attempts">{{ job.kamiwaza_check_attempts or 0 }}</span> / 60
-                </p>
+                <!-- Deployment stages -->
+                <div id="deployment-stages" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.5rem; margin: 1rem 0;">
+                    <div class="stage" id="stage-boot" style="padding: 0.5rem; border-radius: 4px; background: #e0e0e0; font-size: 0.85rem;">
+                        <span class="stage-icon">⏳</span> System Boot
+                    </div>
+                    <div class="stage" id="stage-packages" style="padding: 0.5rem; border-radius: 4px; background: #e0e0e0; font-size: 0.85rem;">
+                        <span class="stage-icon">⏳</span> Installing Packages
+                    </div>
+                    <div class="stage" id="stage-docker" style="padding: 0.5rem; border-radius: 4px; background: #e0e0e0; font-size: 0.85rem;">
+                        <span class="stage-icon">⏳</span> Installing Docker
+                    </div>
+                    <div class="stage" id="stage-kamiwaza_download" style="padding: 0.5rem; border-radius: 4px; background: #e0e0e0; font-size: 0.85rem;">
+                        <span class="stage-icon">⏳</span> Downloading Kamiwaza
+                    </div>
+                    <div class="stage" id="stage-kamiwaza_install" style="padding: 0.5rem; border-radius: 4px; background: #e0e0e0; font-size: 0.85rem;">
+                        <span class="stage-icon">⏳</span> Installing RPM
+                    </div>
+                    <div class="stage" id="stage-containers" style="padding: 0.5rem; border-radius: 4px; background: #e0e0e0; font-size: 0.85rem;">
+                        <span class="stage-icon">⏳</span> Starting Containers
+                    </div>
+                    <div class="stage" id="stage-ready" style="padding: 0.5rem; border-radius: 4px; background: #e0e0e0; font-size: 0.85rem;">
+                        <span class="stage-icon">⏳</span> Kamiwaza Ready
+                    </div>
+                </div>
             </div>
 
             <div style="margin-top: 1rem;">
@@ -159,11 +180,37 @@
                 <p><strong>Target URL:</strong> <code>https://{{ job.public_ip }}</code></p>
             </div>
 
+            <!-- EC2 Console Output Viewer -->
+            <div style="margin-top: 1.5rem;">
+                <details open>
+                    <summary style="cursor: pointer; font-weight: 600; margin-bottom: 0.5rem; color: #333;">
+                        📋 EC2 Console Output (Live)
+                    </summary>
+                    <div style="margin-top: 0.5rem;">
+                        <div id="console-output-container" style="background: #1e1e1e; color: #d4d4d4; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 0.75rem; padding: 1rem; border-radius: 4px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word;">
+                            Loading console output...
+                        </div>
+                        <div style="margin-top: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+                            <span id="console-status" style="color: #666; font-size: 0.8rem;">
+                                Last updated: --
+                            </span>
+                            <button onclick="refreshConsoleOutput()" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.25rem 0.75rem;">
+                                🔄 Refresh
+                            </button>
+                        </div>
+                    </div>
+                </details>
+            </div>
+
             <div class="alert alert-info" style="margin-top: 1rem;">
-                <strong>Monitor Deployment Progress:</strong><br>
-                You can SSH into the instance to view real-time logs:<br>
-                <code>ssh ubuntu@{{ job.public_ip }} -i your-key.pem</code><br>
+                <strong>Note:</strong> EC2 console output updates every few minutes and may lag behind real-time.
+                {% if job.key_pair_name %}
+                For real-time logs, SSH into the instance:<br>
+                <code>ssh ec2-user@{{ job.public_ip }} -i {{ job.key_pair_name }}.pem</code><br>
                 <code>sudo tail -f /var/log/kamiwaza-deployment.log</code>
+                {% else %}
+                <br>No SSH key pair was configured. Once SSM agent registers, you can use Session Manager.
+                {% endif %}
             </div>
         </div>
     {% endif %}
@@ -324,45 +371,105 @@ function pollLogs() {
 pollInterval = setInterval(pollLogs, 2000);
 {% endif %}
 
-// Kamiwaza readiness polling
+// Kamiwaza readiness polling with console output
 {% if job.deployment_type == 'kamiwaza' and job.status == 'success' and not job.kamiwaza_ready %}
 let readinessInterval = null;
+let consoleInterval = null;
 let progressBar = document.getElementById('progress-bar');
 let statusElement = document.getElementById('kamiwaza-status');
-let checkAttemptsElement = document.getElementById('check-attempts');
+let consoleContainer = document.getElementById('console-output-container');
+let consoleStatus = document.getElementById('console-status');
+
+function updateStageUI(stages) {
+    if (!stages) return;
+    
+    for (const [key, stage] of Object.entries(stages)) {
+        const stageEl = document.getElementById(`stage-${key}`);
+        if (stageEl) {
+            if (stage.complete) {
+                stageEl.style.background = '#c8e6c9';
+                stageEl.style.color = '#2e7d32';
+                stageEl.querySelector('.stage-icon').textContent = '✓';
+            } else {
+                stageEl.style.background = '#e0e0e0';
+                stageEl.style.color = '#666';
+                stageEl.querySelector('.stage-icon').textContent = '⏳';
+            }
+        }
+    }
+}
+
+function refreshConsoleOutput() {
+    fetch(`/api/jobs/{{ job.id }}/console-output`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Update console output
+                if (consoleContainer) {
+                    consoleContainer.textContent = data.output || 'No output yet...';
+                    consoleContainer.scrollTop = consoleContainer.scrollHeight;
+                }
+                
+                // Update progress bar with real progress
+                if (progressBar && typeof data.progress === 'number') {
+                    progressBar.style.width = data.progress + '%';
+                    progressBar.textContent = data.progress + '%';
+                }
+                
+                // Update stages
+                updateStageUI(data.stages);
+                
+                // Update status
+                if (statusElement) {
+                    if (data.port_443_open) {
+                        statusElement.innerHTML = '<span style="color: #4caf50; font-weight: 600;">✓ Port 443 is open!</span>';
+                    } else {
+                        statusElement.innerHTML = '<span style="color: #ff9800;">Installing... (' + data.progress + '%)</span>';
+                    }
+                }
+                
+                // Update console status timestamp
+                if (consoleStatus) {
+                    consoleStatus.textContent = 'Last updated: ' + new Date().toLocaleTimeString() + ' (' + data.line_count + ' lines)';
+                }
+                
+                // If port 443 is open, trigger readiness check
+                if (data.port_443_open) {
+                    pollKamiwazaReadiness();
+                }
+            } else {
+                if (consoleContainer) {
+                    consoleContainer.textContent = 'Error: ' + (data.error || 'Failed to fetch console output');
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching console output:', error);
+            if (consoleContainer) {
+                consoleContainer.textContent = 'Error loading console output: ' + error.message;
+            }
+        });
+}
 
 function pollKamiwazaReadiness() {
     fetch(`/api/jobs/{{ job.id }}`)
         .then(response => response.json())
         .then(data => {
-            // Update check attempts
-            if (checkAttemptsElement && data.kamiwaza_check_attempts) {
-                checkAttemptsElement.textContent = data.kamiwaza_check_attempts;
-            }
-
-            // Update progress bar (60 max attempts)
-            if (progressBar && data.kamiwaza_check_attempts) {
-                const progress = Math.min((data.kamiwaza_check_attempts / 60) * 100, 100);
-                progressBar.style.width = progress + '%';
-                progressBar.textContent = Math.round(progress) + '%';
-            }
-
-            // Update status message
-            if (statusElement) {
-                if (data.kamiwaza_ready) {
-                    statusElement.innerHTML = '<span style="color: #4caf50; font-weight: 600;">✓ Login page is accessible!</span>';
-                } else {
-                    const dots = '.'.repeat((data.kamiwaza_check_attempts || 0) % 4);
-                    statusElement.innerHTML = `<span style="color: #ff9800;">Checking${dots}</span>`;
-                }
-            }
-
             // If Kamiwaza is ready, reload the page to show the access button
             if (data.kamiwaza_ready) {
                 if (readinessInterval) {
                     clearInterval(readinessInterval);
                     readinessInterval = null;
                 }
+                if (consoleInterval) {
+                    clearInterval(consoleInterval);
+                    consoleInterval = null;
+                }
+                
+                if (statusElement) {
+                    statusElement.innerHTML = '<span style="color: #4caf50; font-weight: 600;">✓ Kamiwaza is ready! Reloading...</span>';
+                }
+                
                 // Reload page after 2 seconds to show success state
                 setTimeout(() => {
                     location.reload();
@@ -374,8 +481,12 @@ function pollKamiwazaReadiness() {
         });
 }
 
-// Start polling for Kamiwaza readiness
-readinessInterval = setInterval(pollKamiwazaReadiness, 5000);  // Check every 5 seconds
+// Start polling for console output every 10 seconds
+consoleInterval = setInterval(refreshConsoleOutput, 10000);
+refreshConsoleOutput();  // Call immediately
+
+// Start polling for Kamiwaza readiness every 15 seconds
+readinessInterval = setInterval(pollKamiwazaReadiness, 15000);
 pollKamiwazaReadiness();  // Call immediately
 {% endif %}
 

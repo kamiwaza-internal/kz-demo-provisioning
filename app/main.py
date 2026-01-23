@@ -2584,6 +2584,161 @@ async def create_ami_from_package(
         }, status_code=500)
 
 
+@app.get("/api/jobs/{job_id}/console-output")
+async def get_console_output(
+    job_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get EC2 console output for a job's instance"""
+    try:
+        import boto3
+        from botocore.exceptions import ClientError
+        
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            return JSONResponse({
+                "success": False,
+                "error": "Job not found"
+            }, status_code=404)
+        
+        if not job.instance_id:
+            return JSONResponse({
+                "success": False,
+                "error": "No instance associated with this job"
+            }, status_code=400)
+        
+        # Get credentials
+        from app.aws_cdk_provisioner import AWSCDKProvisioner
+        provisioner = AWSCDKProvisioner()
+        auth_method = job.aws_auth_method or settings.aws_auth_method
+        
+        credentials = None
+        
+        try:
+            if auth_method == "assume_role":
+                role_arn = job.assume_role_arn or settings.aws_assume_role_arn
+                external_id = job.external_id or settings.aws_external_id
+                session_name = job.session_name or settings.aws_session_name
+                
+                if role_arn:
+                    credentials = provisioner.assume_role(
+                        role_arn=role_arn,
+                        session_name=session_name,
+                        external_id=external_id,
+                        region=job.aws_region
+                    )
+            elif auth_method == "access_keys":
+                access_key = settings.aws_access_key_id
+                secret_key = settings.aws_secret_access_key
+                
+                if access_key and secret_key:
+                    credentials = {
+                        'access_key': access_key,
+                        'secret_key': secret_key,
+                        'region': job.aws_region
+                    }
+        except Exception as e:
+            return JSONResponse({
+                "success": False,
+                "error": f"Failed to get AWS credentials: {str(e)}"
+            }, status_code=500)
+        
+        if not credentials:
+            return JSONResponse({
+                "success": False,
+                "error": "No valid AWS credentials available"
+            }, status_code=500)
+        
+        # Get console output
+        ec2_client = boto3.client(
+            'ec2',
+            region_name=job.aws_region,
+            aws_access_key_id=credentials.get('access_key'),
+            aws_secret_access_key=credentials.get('secret_key'),
+            aws_session_token=credentials.get('session_token')
+        )
+        
+        response = ec2_client.get_console_output(
+            InstanceId=job.instance_id,
+            Latest=True
+        )
+        
+        output = response.get('Output', '')
+        
+        # Parse deployment stages from console output
+        stages = {
+            "boot": {"name": "System Boot", "complete": False, "pattern": "cloud-init"},
+            "packages": {"name": "Installing Packages", "complete": False, "pattern": "Prerequisites installed"},
+            "docker": {"name": "Installing Docker", "complete": False, "pattern": "Docker "},
+            "kamiwaza_download": {"name": "Downloading Kamiwaza", "complete": False, "pattern": "Downloading Kamiwaza"},
+            "kamiwaza_install": {"name": "Installing Kamiwaza RPM", "complete": False, "pattern": "Installing.*kamiwaza"},
+            "containers": {"name": "Starting Containers", "complete": False, "pattern": "Starting Docker|docker compose"},
+            "ready": {"name": "Kamiwaza Ready", "complete": False, "pattern": "Kamiwaza.*ready|Login page accessible"}
+        }
+        
+        # Check which stages are complete
+        import re
+        for stage_key, stage_info in stages.items():
+            if re.search(stage_info["pattern"], output, re.IGNORECASE):
+                stage_info["complete"] = True
+        
+        # Calculate progress percentage based on stages
+        completed_stages = sum(1 for s in stages.values() if s["complete"])
+        total_stages = len(stages)
+        progress = int((completed_stages / total_stages) * 100)
+        
+        # Also check port 443 for final readiness
+        import socket
+        port_443_open = False
+        if job.public_ip:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            result = sock.connect_ex((job.public_ip, 443))
+            port_443_open = (result == 0)
+            sock.close()
+            
+            if port_443_open:
+                stages["ready"]["complete"] = True
+                progress = 100
+        
+        # Extract last N lines for display (filter out noise)
+        lines = output.split('\n')
+        # Filter to show meaningful lines
+        meaningful_lines = []
+        for line in lines:
+            # Skip empty lines and common noise
+            if not line.strip():
+                continue
+            # Keep lines with timestamps or deployment-related content
+            if any(marker in line for marker in ['cloud-init', 'Step', 'kamiwaza', 'docker', 'Installing', 'Downloaded', 'Starting', 'Error', 'Warning', '✓', '✗']):
+                meaningful_lines.append(line)
+        
+        # Return last 100 meaningful lines
+        display_lines = meaningful_lines[-100:]
+        
+        return JSONResponse({
+            "success": True,
+            "instance_id": job.instance_id,
+            "output": "\n".join(display_lines),
+            "line_count": len(lines),
+            "stages": {k: {"name": v["name"], "complete": v["complete"]} for k, v in stages.items()},
+            "progress": progress,
+            "port_443_open": port_443_open
+        })
+        
+    except ClientError as e:
+        return JSONResponse({
+            "success": False,
+            "error": f"AWS error: {e.response['Error']['Message']}"
+        }, status_code=500)
+    except Exception as e:
+        logger.error(f"Error getting console output: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+
 @app.post("/api/jobs/{job_id}/destroy-stack")
 async def destroy_cloudformation_stack(
     job_id: int,
