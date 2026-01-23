@@ -181,6 +181,36 @@ usermod -aG docker $KAMIWAZA_USER 2>/dev/null || true
 
 log "✓ Docker configured and running successfully"
 
+# Step 1d: Install AWS SSM Agent (for remote management)
+log "Installing AWS SSM Agent..."
+if ! systemctl is-active --quiet amazon-ssm-agent 2>/dev/null; then
+    # SSM agent is not installed or not running
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "x86_64" ]; then
+        SSM_URL="https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm"
+    elif [ "$ARCH" = "aarch64" ]; then
+        SSM_URL="https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_arm64/amazon-ssm-agent.rpm"
+    else
+        log "⚠ Unknown architecture $ARCH, skipping SSM agent"
+        SSM_URL=""
+    fi
+    
+    if [ -n "$SSM_URL" ]; then
+        curl -sL -o /tmp/amazon-ssm-agent.rpm "$SSM_URL"
+        if [ -f /tmp/amazon-ssm-agent.rpm ]; then
+            dnf install -y /tmp/amazon-ssm-agent.rpm 2>/dev/null || rpm -ivh /tmp/amazon-ssm-agent.rpm 2>/dev/null || true
+            systemctl enable amazon-ssm-agent
+            systemctl start amazon-ssm-agent
+            rm -f /tmp/amazon-ssm-agent.rpm
+            log "✓ AWS SSM Agent installed and started"
+        else
+            log "⚠ Failed to download SSM agent"
+        fi
+    fi
+else
+    log "✓ AWS SSM Agent already running"
+fi
+
 # Step 2: Download Kamiwaza RPM package
 log "Step 2: Downloading Kamiwaza RPM package..."
 PACKAGE_FILENAME=$(basename "$KAMIWAZA_PACKAGE_URL")
