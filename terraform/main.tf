@@ -110,13 +110,16 @@ resource "aws_security_group" "instance" {
     description = "Allow HTTPS"
   }
 
-  # Allow SSH (restricted - adjust CIDR as needed)
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # TODO: Restrict to specific CIDR
-    description = "Allow SSH"
+  # SSH only from explicitly allowed CIDRs (never 0.0.0.0/0). Use SSM when empty.
+  dynamic "ingress" {
+    for_each = [for c in var.ssh_allowed_cidrs : c if c != "0.0.0.0/0"]
+    content {
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = [ingress.value]
+      description = "Allow SSH from ${ingress.value}"
+    }
   }
 
   tags = merge(

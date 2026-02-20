@@ -309,6 +309,9 @@ class AWSCDKProvisioner:
             context['userData'] = instance_config['user_data']
         if instance_config.get('tags'):
             context['tags'] = instance_config['tags']
+        ssh_cidrs = instance_config.get('ssh_allowed_cidrs')
+        if ssh_cidrs and isinstance(ssh_cidrs, list) and len(ssh_cidrs) > 0:
+            context['sshAllowedCidrs'] = [c for c in ssh_cidrs if c and c.strip() and c.strip() != "0.0.0.0/0"]
 
         # Set up environment
         env = {

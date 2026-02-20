@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     allowed_regions: str = "us-east-1,us-west-2,eu-west-1,eu-central-1"
     allowed_instance_types: str = "t3.xlarge,c7i.48xlarge"
     allow_access_key_auth: bool = False
+    # SSH: list of CIDRs allowed to reach port 22 (default empty = no public SSH; use SSM). Comma-separated in env.
+    ssh_allowed_cidrs: str = ""
 
     # Terraform
     terraform_binary: str = "terraform"
@@ -91,6 +93,10 @@ class Settings(BaseSettings):
     @property
     def allowed_instance_types_list(self) -> List[str]:
         return [t.strip() for t in self.allowed_instance_types.split(",")]
+
+    @property
+    def ssh_allowed_cidrs_list(self) -> List[str]:
+        return [c.strip() for c in self.ssh_allowed_cidrs.split(",") if c.strip()]
 
     class Config:
         env_file = ".env"

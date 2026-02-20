@@ -159,7 +159,7 @@ The CDK stack creates:
 - VPC: Use existing or create new
 - Subnet: Public subnet with IGW
 - Security Group:
-  - SSH (22) - from anywhere
+  - SSH (22) - only from allowed CIDRs when configured (default: no public SSH; use SSM)
   - HTTP (80) - from anywhere
   - HTTPS (443) - from anywhere
   - Docker ports (8000-8100) - from anywhere

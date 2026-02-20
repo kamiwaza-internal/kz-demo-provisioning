@@ -61,3 +61,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "ssh_allowed_cidrs" {
+  description = "List of CIDR blocks allowed to SSH (port 22). Default empty = no public SSH; use SSM for access."
+  type        = list(string)
+  default     = []
+}

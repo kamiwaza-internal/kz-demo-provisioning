@@ -233,6 +233,7 @@ def execute_cdk_provisioning(job: Job, db, log_message):
     # Get volume size from job or default
     volume_size = getattr(job, 'volume_size', None) or 100
 
+    from app.config import settings
     instance_config = {
         'instance_type': job.instance_type,
         'ami_id': ami_id_to_use,
@@ -244,6 +245,8 @@ def execute_cdk_provisioning(job: Job, db, log_message):
         'volume_size': volume_size,
         'tags': job.tags or {}
     }
+    if getattr(settings, 'ssh_allowed_cidrs_list', None):
+        instance_config['ssh_allowed_cidrs'] = settings.ssh_allowed_cidrs_list
 
     # Add job-specific tags
     instance_config['tags'].update({

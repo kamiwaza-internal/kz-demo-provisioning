@@ -70,12 +70,17 @@ class KamiwazaEC2Stack(Stack):
             allow_all_outbound=True
         )
 
-        # Allow SSH from anywhere (adjust for production)
-        security_group.add_ingress_rule(
-            ec2.Peer.any_ipv4(),
-            ec2.Port.tcp(22),
-            "Allow SSH"
-        )
+        # SSH: only from explicitly allowed CIDRs (never 0.0.0.0/0). Use SSM for access when no CIDRs set.
+        ssh_allowed_raw = self.node.try_get_context("sshAllowedCidrs")
+        if ssh_allowed_raw is not None:
+            ssh_cidrs = ssh_allowed_raw if isinstance(ssh_allowed_raw, list) else (json.loads(ssh_allowed_raw) if isinstance(ssh_allowed_raw, str) else [])
+            for cidr in (c.strip() for c in ssh_cidrs if c and isinstance(c, str)):
+                if cidr and cidr != "0.0.0.0/0":
+                    security_group.add_ingress_rule(
+                        ec2.Peer.ipv4(cidr),
+                        ec2.Port.tcp(22),
+                        f"Allow SSH from {cidr}"
+                    )
 
         # Allow HTTP/HTTPS
         security_group.add_ingress_rule(
